@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.logging import logger
 from models.database import create_db_and_tables
-from api import muses, websocket, research_agent, resources, knowledge, lessons, chat, voice
+from api import muses, websocket, research_agent, resources, knowledge, lessons, chat, voice, canvas
 
 
 @asynccontextmanager
@@ -45,6 +45,7 @@ app.include_router(research_agent.router,  prefix="/api")
 app.include_router(resources.router,       prefix="/api")
 app.include_router(knowledge.router,       prefix="/api")
 app.include_router(lessons.router,         prefix="/api")
+app.include_router(canvas.router,          prefix="/api")
 app.include_router(chat.router,            prefix="/api")
 app.include_router(voice.router,           prefix="/api")
 app.include_router(voice.router_ws)

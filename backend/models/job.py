@@ -14,7 +14,7 @@ class BackgroundJob(SQLModel, table=True):
 
     id: str = Field(default_factory=_uuid, primary_key=True)
     muse_id: str = Field(foreign_key="muses.id", index=True)
-    job_type: str                            # research_agent | knowledge_layer | lesson_gen
+    job_type: str                            # research_agent | knowledge_layer | lesson_gen | canvas
     status: str = "queued"                  # queued | running | complete | failed
     progress: int = 0                        # 0–100
     status_message: str = ""

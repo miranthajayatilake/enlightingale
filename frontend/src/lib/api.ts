@@ -108,6 +108,37 @@ export interface KnowledgeLayer {
   built_at: string | null
 }
 
+export type CanvasSectionType =
+  | 'hero'
+  | 'prose'
+  | 'key_concepts'
+  | 'timeline'
+  | 'comparison'
+  | 'stat_band'
+  | 'resource_spotlight'
+  | 'gaps'
+  | 'takeaways'
+
+export interface CanvasSection {
+  id: string
+  type: CanvasSectionType
+  title: string
+  narration: string
+  // Shape depends on `type` — see backend services/canvas/prompts.py SECTION_SCHEMAS
+  data: Record<string, unknown>
+  order: number
+}
+
+export interface MuseCanvas {
+  muse_id: string
+  sections: CanvasSection[]
+  status: 'idle' | 'building' | 'ready' | 'stale' | 'failed'
+  error: string | null
+  source_signature: string
+  built_at: string | null
+  stale: boolean
+}
+
 export interface BackgroundJob {
   id: string
   muse_id: string
