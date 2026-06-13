@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Enlightingale — Your Personal Learning Companion</title>
-  <meta name="description" content="Describe what you want to learn. Enlightingale researches it, builds your knowledge base, and teaches you through an interactive voice mentor." />
+  <title>Enlightingale — You cannot outsource understanding</title>
+  <meta name="description" content="You cannot outsource understanding. Enlightingale researches any topic, builds your knowledge base, and teaches you through an interactive voice mentor until you genuinely get it." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet" />
@@ -62,12 +62,10 @@
     .nav-logo-mark {
       width: 28px;
       height: 28px;
-      background: var(--accent);
-      border-radius: 7px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
+      flex-shrink: 0;
     }
 
     .nav-logo-text {
@@ -436,12 +434,10 @@
     .footer-logo-mark {
       width: 22px;
       height: 22px;
-      background: var(--accent);
-      border-radius: 5px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      flex-shrink: 0;
     }
 
     .footer-logo-text {
@@ -461,7 +457,17 @@
   <!-- NAV -->
   <nav>
     <a href="#" class="nav-logo">
-      <div class="nav-logo-mark">🪶</div>
+      <div class="nav-logo-mark">
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M14 1C14 8.5 19.5 14 27 14C19.5 14 14 19.5 14 27C14 19.5 8.5 14 1 14C8.5 14 14 8.5 14 1Z" fill="url(#navGrad)"/>
+          <defs>
+            <linearGradient id="navGrad" x1="1" y1="1" x2="27" y2="27" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#F09468"/>
+              <stop offset="100%" stop-color="#B84E22"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
       <span class="nav-logo-text">Enlightingale</span>
     </a>
     <a href="https://github.com/miranthajayatilake/enlightingale" class="nav-cta" target="_blank" rel="noopener">
@@ -478,9 +484,9 @@
       <div class="hero-pill-dot"></div>
       Personal AI Learning Companion
     </div>
-    <h1>Learn <span id="topic-word">anything</span><span class="cursor"></span>,<br /><strong>deeply</strong>, at your own pace</h1>
+    <h1>You cannot outsource<br /><strong>understanding</strong> <span id="topic-word">anything</span><span class="cursor"></span></h1>
     <p class="hero-sub">
-      Tell Enlightingale what you want to understand. It researches the topic, builds your knowledge base, and teaches you through an interactive voice mentor — on your schedule, in your words.
+      Describe what you want to truly understand. Enlightingale researches it, builds a structured knowledge base, and teaches you through an interactive voice mentor — until it actually clicks.
     </p>
     <div class="hero-actions">
       <a href="https://github.com/miranthajayatilake/enlightingale" class="btn-primary" target="_blank" rel="noopener">
@@ -497,7 +503,7 @@
     <div class="loop-inner">
       <p class="section-label">How it works</p>
       <h2 class="section-heading">From curiosity to deep understanding<br />in three steps</h2>
-      <p class="section-sub">No courses to browse. No syllabus to design. Just describe what you're curious about and let Enlightingale do the rest.</p>
+      <p class="section-sub">No courses to browse. No syllabus to design. Just describe what you want to truly understand — Enlightingale builds the path and walks it with you.</p>
       <div class="loop-steps">
         <div class="loop-step">
           <div class="loop-step-num">01</div>
@@ -549,8 +555,8 @@
 
   <!-- CTA BAND -->
   <section class="cta-band">
-    <h2>Start your first Muse today</h2>
-    <p>Self-hosted, open source, and built for the way curious people actually learn.</p>
+    <h2>Start understanding something deeply today</h2>
+    <p>Self-hosted, open source, and built for people who want to actually understand — not just know about.</p>
     <a href="https://github.com/miranthajayatilake/enlightingale" class="btn-accent-light" target="_blank" rel="noopener">
       View on GitHub
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M7 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -560,7 +566,17 @@
   <!-- FOOTER -->
   <footer>
     <a href="#" class="footer-logo">
-      <div class="footer-logo-mark">🪶</div>
+      <div class="footer-logo-mark">
+        <svg width="20" height="20" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M14 1C14 8.5 19.5 14 27 14C19.5 14 14 19.5 14 27C14 19.5 8.5 14 1 14C8.5 14 14 8.5 14 1Z" fill="url(#footGrad)"/>
+          <defs>
+            <linearGradient id="footGrad" x1="1" y1="1" x2="27" y2="27" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#F09468"/>
+              <stop offset="100%" stop-color="#B84E22"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
       <span class="footer-logo-text">Enlightingale</span>
     </a>
     <small>Built with curiosity. Open source.</small>
