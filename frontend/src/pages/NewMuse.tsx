@@ -239,6 +239,7 @@ function Step4({ museName, points, setPoints, onBack, onRemove, onSkip, onCreate
             onClick={() => setTab(id)}
             className={cn(
               'flex-1 py-2 text-sm font-medium rounded-md transition-all duration-100',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1',
               tab === id ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -338,6 +339,7 @@ function PdfAdder({ onAdd }: { onAdd: (sp: Omit<StartingPoint, 'localId'>) => vo
     setFile(null)
     if (!f) return
     if (!f.name.toLowerCase().endsWith('.pdf')) { setError('Only PDF files are supported'); return }
+    if (f.size > 50 * 1024 * 1024) { setError('File is too large. Maximum size is 50 MB.'); return }
     setFile(f)
   }
 

@@ -98,7 +98,7 @@ export function CanvasBuildStages({ muse, klStatus, canvasStatus: _canvasStatus,
                   <p className={[
                     'text-sm font-medium leading-snug',
                     status === 'active'  ? 'text-ink' :
-                    status === 'done'    ? 'text-ink-secondary line-through decoration-ink-muted/40' :
+                    status === 'done'    ? 'text-ink-secondary opacity-60' :
                     'text-ink-muted',
                   ].join(' ')}>
                     {stage.label}

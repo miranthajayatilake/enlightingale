@@ -12,8 +12,11 @@ Steps:
 """
 
 import json
+import logging
 from datetime import datetime
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 from models.database import engine
 from models.muse import Muse
@@ -58,6 +61,19 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
     with Session(engine) as session:
         muse = session.get(Muse, muse_id)
         if not muse:
+            logger.warning("KL build %s: muse %s no longer exists — marking failed", job_id, muse_id)
+            job = session.get(BackgroundJob, job_id)
+            if job:
+                job.status = "failed"
+                job.status_message = "Muse not found"
+                job.completed_at = datetime.utcnow()
+                session.add(job)
+            kl = session.get(KnowledgeLayer, muse_id)
+            if kl:
+                kl.status = "failed"
+                kl.error = "Muse not found"
+                session.add(kl)
+            session.commit()
             return
         name, description = muse.name, muse.description
 
@@ -173,17 +189,17 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
 
         await _pub(redis_conn, job_id, {"type": "complete", "progress": 100})
 
-        # Auto-build the Canvas only on the very first KL build (no Canvas exists yet).
-        # When a Canvas already exists, leave it in place — staleness is surfaced via
-        # source_signature and the user triggers a rebuild from the Canvas header banner.
+        # Auto-build the Canvas when no ready Canvas exists yet (covers: no canvas, idle, failed).
+        # When a Canvas is already ready, leave it — staleness is surfaced via source_signature
+        # and the user triggers a rebuild from the Canvas header banner.
         try:
             from models.canvas import MuseCanvas
 
             canvas_job_id = None
             with Session(engine) as session:
                 canvas = session.get(MuseCanvas, muse_id)
-                first_build = not canvas or canvas.status not in ("ready", "building")
-                if first_build:
+                needs_canvas = not canvas or canvas.status not in ("ready", "building")
+                if needs_canvas:
                     active = session.exec(
                         select(BackgroundJob).where(
                             BackgroundJob.muse_id == muse_id,
@@ -208,6 +224,7 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
                     "run_build_canvas", muse_id=muse_id, job_id=canvas_job_id
                 )
         except Exception as canvas_exc:
+            logger.error("Canvas enqueue failed for muse %s: %s", muse_id, canvas_exc)
             await _pub(redis_conn, job_id, {"type": "progress", "progress": 100, "step": f"Canvas enqueue skipped: {canvas_exc}"})
 
         # If any approved resources finished processing while this build was running
@@ -223,10 +240,11 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
                     )
                 ).first()
                 if unembedded:
+                    logger.info("Post-build: %s has unembedded resources — triggering re-build", muse_id)
                     from services.knowledge.autorebuild import maybe_enqueue_kl_build
                     await maybe_enqueue_kl_build(muse_id, redis_conn, session)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Post-build re-trigger check failed for muse %s: %s", muse_id, exc)
 
     except Exception as exc:
         error_msg = f"Knowledge layer build failed: {exc}"

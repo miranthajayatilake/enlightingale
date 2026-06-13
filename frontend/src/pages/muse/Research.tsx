@@ -56,6 +56,9 @@ function ResearchAgentSection({ muse }: { muse: Muse }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['muse', muse.id] })
       queryClient.invalidateQueries({ queryKey: ['muses'] })
+      queryClient.invalidateQueries({ queryKey: ['canvas', muse.id] })
+      queryClient.invalidateQueries({ queryKey: ['knowledge', muse.id] })
+      queryClient.invalidateQueries({ queryKey: ['agent-results', muse.id] })
     },
   })
 
@@ -73,6 +76,11 @@ function ResearchAgentSection({ muse }: { muse: Muse }) {
       </div>
 
       <Card className="p-6">
+        {runAgent.isError && (
+          <p className="text-xs text-error mb-3">
+            Couldn't start the Research Agent. Please try again.
+          </p>
+        )}
         {muse.agent_status === 'idle' && (
           <div className="flex items-end justify-between gap-6">
             <p className="text-sm text-ink-secondary leading-relaxed max-w-sm">
@@ -149,8 +157,14 @@ function SourcesSection({ muse }: { muse: Muse }) {
     },
   })
 
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
   const deleteResource = useMutation({
-    mutationFn: (id: string) => api.delete(`/muses/${muse.id}/resources/${id}`),
+    mutationFn: async (id: string) => {
+      setDeletingId(id)
+      return api.delete(`/muses/${muse.id}/resources/${id}`)
+    },
+    onSettled: () => setDeletingId(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['resources', muse.id] })
       queryClient.invalidateQueries({ queryKey: ['muse', muse.id] })
@@ -188,6 +202,7 @@ function SourcesSection({ muse }: { muse: Muse }) {
           <p className="font-medium text-ink mb-1">No sources yet</p>
           <p className="text-sm text-ink-muted max-w-xs mx-auto mb-4">
             Add URLs, PDFs, or notes — or use the Research Agent above to find sources automatically.
+            Agent-gathered sources appear here after you approve them.
           </p>
           <Button variant="secondary" onClick={() => setShowModal(true)}>Add a source</Button>
         </div>
@@ -200,7 +215,7 @@ function SourcesSection({ muse }: { muse: Muse }) {
               key={resource.id}
               resource={resource}
               onDelete={() => deleteResource.mutate(resource.id)}
-              deleting={deleteResource.isPending}
+              deleting={deletingId === resource.id}
             />
           ))}
         </div>
@@ -285,7 +300,7 @@ function ChatSection({ muse }: { muse: Muse }) {
           Chat with your knowledge base. Useful answers can be saved as sources.
         </p>
       </div>
-      <div className="rounded-lg border border-border bg-surface shadow-sm overflow-hidden" style={{ height: 520 }}>
+      <div className="rounded-lg border border-border bg-surface shadow-sm overflow-hidden h-[520px]">
         <ChatPanel muse={muse} />
       </div>
     </div>

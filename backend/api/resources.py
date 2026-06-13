@@ -156,7 +156,9 @@ async def update_resource(
     session.add(resource)
     session.commit()
     session.refresh(resource)
-    if approving:
+    # Only trigger KL rebuild if the resource is already processed and embedded;
+    # if it's still pending/processing, processor.py will trigger after it finishes.
+    if approving and resource.status == "ready":
         await maybe_enqueue_kl_build(muse_id, request.app.state.arq_pool, session)
     return resource
 
@@ -171,7 +173,7 @@ async def delete_resource(
     resource = session.get(Resource, resource_id)
     if not resource or resource.muse_id != muse_id:
         raise HTTPException(status_code=404, detail="Resource not found")
-    was_approved = resource.approved
+    was_embedded = resource.embedded
     session.delete(resource)
 
     muse = session.get(Muse, muse_id)
@@ -180,5 +182,7 @@ async def delete_resource(
         session.add(muse)
 
     session.commit()
-    if was_approved:
+    # Only rebuild the KL if the resource was actually embedded — unembedded resources
+    # (pending/processing) have no presence in the vector store and don't affect the KL.
+    if was_embedded:
         await maybe_enqueue_kl_build(muse_id, request.app.state.arq_pool, session)

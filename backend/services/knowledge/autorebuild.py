@@ -1,7 +1,10 @@
+import logging
 from sqlmodel import Session, select
 
 from models.job import BackgroundJob
 from models.knowledge import KnowledgeLayer
+
+logger = logging.getLogger(__name__)
 
 
 async def maybe_enqueue_kl_build(muse_id: str, arq_conn, session: Session) -> None:
@@ -14,6 +17,7 @@ async def maybe_enqueue_kl_build(muse_id: str, arq_conn, session: Session) -> No
         )
     ).first()
     if active:
+        logger.debug("KL build debounced for muse %s — job %s already %s", muse_id, active.id, active.status)
         return
 
     kl = session.get(KnowledgeLayer, muse_id)
@@ -29,4 +33,16 @@ async def maybe_enqueue_kl_build(muse_id: str, arq_conn, session: Session) -> No
     session.commit()
     session.refresh(job)
 
-    await arq_conn.enqueue_job("run_build_knowledge_layer", muse_id=muse_id, job_id=job.id)
+    try:
+        await arq_conn.enqueue_job("run_build_knowledge_layer", muse_id=muse_id, job_id=job.id)
+        logger.info("KL build enqueued for muse %s — job %s", muse_id, job.id)
+    except Exception as exc:
+        logger.error("Failed to enqueue KL build for muse %s: %s — rolling back", muse_id, exc)
+        # Undo the DB changes so the next trigger can retry cleanly.
+        job.status = "failed"
+        job.status_message = f"Enqueue failed: {exc}"
+        kl.status = "idle"
+        session.add(job)
+        session.add(kl)
+        session.commit()
+        raise

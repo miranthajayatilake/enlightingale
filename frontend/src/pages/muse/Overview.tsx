@@ -55,6 +55,9 @@ export function MuseOverview() {
     },
   })
 
+  const buildCanvasMutate = buildCanvas.mutate
+  const buildKlMutate = buildKl.mutate
+
   // Auto-generate the Canvas once the Knowledge Layer is ready but no Canvas exists yet.
   const canvasTriggeredFor = useRef<string | null>(null)
   useEffect(() => {
@@ -63,9 +66,9 @@ export function MuseOverview() {
     const noCanvas = !canvas || canvas.status === 'idle'
     if (klReady && noCanvas && canvasTriggeredFor.current !== muse.id && !buildCanvas.isPending) {
       canvasTriggeredFor.current = muse.id
-      buildCanvas.mutate()
+      buildCanvasMutate()
     }
-  }, [canvasLoaded, kl?.status, canvas, muse.id, buildCanvas])
+  }, [canvasLoaded, kl?.status, canvas, muse.id, buildCanvas.isPending, buildCanvasMutate])
 
   // Fallback: auto-trigger KL for pre-v0.3 Muses that have an idle KL with no Canvas.
   const klTriggeredFor = useRef<string | null>(null)
@@ -75,9 +78,9 @@ export function MuseOverview() {
     const canvasNotReady = !canvas || canvas.status !== 'ready'
     if (klIdle && canvasNotReady && klTriggeredFor.current !== muse.id && !buildKl.isPending) {
       klTriggeredFor.current = muse.id
-      buildKl.mutate()
+      buildKlMutate()
     }
-  }, [klLoaded, canvasLoaded, kl?.status, canvas?.status, muse.id, buildKl])
+  }, [klLoaded, canvasLoaded, kl?.status, canvas?.status, muse.id, buildKl.isPending, buildKlMutate])
 
   const klStatus = kl?.status ?? 'idle'
   const canvasStatus = canvas?.status ?? 'idle'

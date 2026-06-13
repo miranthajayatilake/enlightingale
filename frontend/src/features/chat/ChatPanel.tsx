@@ -170,12 +170,13 @@ export function ChatPanel({ muse }: { muse: Muse }) {
 
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [saveErrorId, setSaveErrorId] = useState<string | null>(null)
 
   const handleSave = useCallback(
     async (msg: DisplayMessage) => {
       if (!msg.content || savedIds.has(msg.id) || savingId) return
       setSavingId(msg.id)
-      // Derive a short title from the first line of the response
+      setSaveErrorId(null)
       const firstLine = msg.content.replace(/[#*_`]/g, '').split('\n')[0].trim()
       const title = firstLine.length > 80 ? firstLine.slice(0, 80).trimEnd() + '…' : firstLine
       try {
@@ -189,7 +190,7 @@ export function ChatPanel({ muse }: { muse: Muse }) {
         queryClient.invalidateQueries({ queryKey: ['muse', muse.id] })
         queryClient.invalidateQueries({ queryKey: ['muses'] })
       } catch {
-        // silently fail — no permanent state was changed
+        setSaveErrorId(msg.id)
       } finally {
         setSavingId(null)
       }
@@ -210,20 +211,24 @@ export function ChatPanel({ muse }: { muse: Muse }) {
           <>
             {sessions.length > 0 && (
               <div className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-none">
-                {sessions.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => { setSessionId(s.id); setDisplayMessages([]) }}
-                    className={[
-                      'shrink-0 px-3 py-1.5 rounded-md text-xs transition-colors',
-                      s.id === sessionId
-                        ? 'bg-accent text-white font-medium'
-                        : 'text-ink-muted hover:bg-cream-hover hover:text-ink',
-                    ].join(' ')}
-                  >
-                    {s.title ?? 'New conversation'}
-                  </button>
-                ))}
+                {sessions.map((s) => {
+                  const switching = s.id !== sessionId && deleteSession.isPending === false && sessionsLoading === false
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => { setSessionId(s.id); setDisplayMessages([]) }}
+                      className={[
+                        'shrink-0 px-3 py-1.5 rounded-md text-xs transition-colors',
+                        s.id === sessionId
+                          ? 'bg-accent text-white font-medium'
+                          : 'text-ink-muted hover:bg-cream-hover hover:text-ink',
+                      ].join(' ')}
+                      aria-current={s.id === sessionId ? 'true' : undefined}
+                    >
+                      {switching && s.id === sessionId ? <Spinner size="sm" /> : (s.title ?? 'New conversation')}
+                    </button>
+                  )
+                })}
               </div>
             )}
 
@@ -235,6 +240,7 @@ export function ChatPanel({ muse }: { muse: Muse }) {
                 <button
                   onClick={() => deleteSession.mutate(sessionId)}
                   disabled={deleteSession.isPending}
+                  aria-label="Delete this conversation"
                   className="p-1.5 text-ink-muted hover:text-error transition-colors disabled:opacity-40 rounded"
                   title="Delete this conversation"
                 >
@@ -276,6 +282,7 @@ export function ChatPanel({ muse }: { muse: Muse }) {
               onSave={handleSave}
               savingId={savingId}
               savedIds={savedIds}
+              saveErrorId={saveErrorId}
             />
           )}
           {sessionId && <ChatInput onSend={sendMessage} disabled={isStreaming} />}

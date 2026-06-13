@@ -4,6 +4,7 @@ export interface SectionProps {
   section: CanvasSection
   museId?: string
   onFocusedResearch?: (focus: string) => void
+  focusedResearchPending?: boolean
 }
 
 /** Narrow a section's loosely-typed `data` to an expected shape. */

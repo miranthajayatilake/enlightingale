@@ -92,6 +92,7 @@ export function Canvas({ muse, canvas }: Props) {
                 section={section}
                 museId={muse.id}
                 onFocusedResearch={onFocusedResearch}
+                focusedResearchPending={runFocusedAgent.isPending}
               />
             </CanvasSectionShell>
           )
@@ -149,11 +150,16 @@ function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
 
   useEffect(() => {
     if (!menuOpen) return
-    const onClick = (e: MouseEvent) => {
+    const onMouse = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
     }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    document.addEventListener('mousedown', onMouse)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onMouse)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [menuOpen])
 
   const rebuildCanvas = useMutation({
@@ -180,12 +186,20 @@ function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
     setMenuOpen(false)
   }
 
+  const statusBanner = rebuildCanvas.isPending
+    ? 'Rebuilding your Canvas…'
+    : rebuildKnowledge.isPending
+    ? 'Rebuilding Knowledge Layer…'
+    : runAgent.isPending
+    ? 'Starting Research Agent…'
+    : null
+
   return (
     <div className="sticky top-0 z-10 bg-cream/90 backdrop-blur-sm">
-      {rebuildCanvas.isPending ? (
+      {statusBanner ? (
         <div className="flex items-center gap-2 px-6 py-2 bg-accent-light border-b border-accent/20">
           <Spinner size="sm" />
-          <p className="text-xs text-ink-secondary">Rebuilding your Canvas…</p>
+          <p className="text-xs text-ink-secondary">{statusBanner}</p>
         </div>
       ) : stale ? (
         <div className="flex items-center justify-between gap-4 px-6 py-2.5 bg-warning/10 border-b border-warning/20">

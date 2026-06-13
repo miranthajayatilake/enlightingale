@@ -4,8 +4,10 @@ interface GapsData {
   items?: string[]
 }
 
-export function GapsSection({ section, onFocusedResearch }: SectionProps) {
+export function GapsSection({ section, onFocusedResearch, focusedResearchPending }: SectionProps) {
   const { items = [] } = data<GapsData>(section)
+
+  if (items.length === 0) return null
 
   return (
     <div>
@@ -20,9 +22,10 @@ export function GapsSection({ section, onFocusedResearch }: SectionProps) {
               {onFocusedResearch && (
                 <button
                   onClick={() => onFocusedResearch(item)}
-                  className="shrink-0 text-xs font-medium text-accent hover:text-accent-hover transition-colors whitespace-nowrap"
+                  disabled={focusedResearchPending}
+                  className="shrink-0 text-xs font-medium text-accent hover:text-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                 >
-                  Research this →
+                  {focusedResearchPending ? 'Starting…' : 'Research this →'}
                 </button>
               )}
             </div>

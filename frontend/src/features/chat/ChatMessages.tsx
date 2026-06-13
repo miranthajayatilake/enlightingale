@@ -17,9 +17,10 @@ interface Props {
   onSave?: (msg: DisplayMessage) => void
   savingId?: string | null
   savedIds?: Set<string>
+  saveErrorId?: string | null
 }
 
-export function ChatMessages({ messages, onSave, savingId, savedIds }: Props) {
+export function ChatMessages({ messages, onSave, savingId, savedIds, saveErrorId }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export function ChatMessages({ messages, onSave, savingId, savedIds }: Props) {
           onSave={onSave}
           saving={savingId === msg.id}
           saved={savedIds?.has(msg.id) ?? false}
+          saveError={saveErrorId === msg.id}
         />
       ))}
       <div ref={bottomRef} />
@@ -59,11 +61,13 @@ function MessageBubble({
   onSave,
   saving,
   saved,
+  saveError,
 }: {
   message: DisplayMessage
   onSave?: (msg: DisplayMessage) => void
   saving: boolean
   saved: boolean
+  saveError: boolean
 }) {
   if (message.role === 'user') {
     return (
@@ -125,13 +129,18 @@ function MessageBubble({
             </div>
           )}
           {onSave && message.content && (
-            <button
-              onClick={() => onSave(message)}
-              disabled={saving || saved}
-              className="shrink-0 text-xs text-ink-muted hover:text-accent disabled:opacity-50 transition-colors ml-auto"
-            >
-              {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save to resources'}
-            </button>
+            <div className="shrink-0 ml-auto flex flex-col items-end gap-0.5">
+              <button
+                onClick={() => onSave(message)}
+                disabled={saving || saved}
+                className="text-xs text-ink-muted hover:text-accent disabled:opacity-50 transition-colors"
+              >
+                {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save to resources'}
+              </button>
+              {saveError && (
+                <span className="text-xs text-error">Failed to save. Try again.</span>
+              )}
+            </div>
           )}
         </div>
       )}

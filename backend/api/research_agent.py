@@ -1,4 +1,5 @@
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -12,6 +13,13 @@ from services.knowledge.autorebuild import maybe_enqueue_kl_build
 
 class AgentRunBody(BaseModel):
     focus: Optional[str] = None
+
+
+class AgentResultsRead(BaseModel):
+    job: Optional[JobRead] = None
+    resources: list[ResourceRead] = []
+    report: Optional[dict] = None
+
 
 router = APIRouter(prefix="/muses/{muse_id}/agent", tags=["research-agent"])
 
@@ -65,7 +73,7 @@ def agent_status(muse_id: str, session: Session = Depends(get_session)):
     return job
 
 
-@router.get("/results")
+@router.get("/results", response_model=AgentResultsRead)
 def agent_results(muse_id: str, session: Session = Depends(get_session)):
     _muse_or_404(muse_id, session)
     job = _latest_agent_job(muse_id, session)
@@ -75,16 +83,16 @@ def agent_results(muse_id: str, session: Session = Depends(get_session)):
             Resource.origin == "research_agent",
         )
     ).all()
-    return {
-        "job": job,
-        "resources": [ResourceRead.model_validate(r) for r in resources],
-        "report": job.result if job else None,
-    }
+    return AgentResultsRead(
+        job=JobRead.model_validate(job) if job else None,
+        resources=[ResourceRead.model_validate(r) for r in resources],
+        report=job.result if job else None,
+    )
 
 
 @router.post("/approve-all")
 async def approve_all(muse_id: str, request: Request, session: Session = Depends(get_session)):
-    muse = _muse_or_404(muse_id, session)
+    _muse_or_404(muse_id, session)
     pending = session.exec(
         select(Resource).where(
             Resource.muse_id == muse_id,
@@ -94,10 +102,6 @@ async def approve_all(muse_id: str, request: Request, session: Session = Depends
     for r in pending:
         r.approved = True
         session.add(r)
-    muse.resource_count = len(session.exec(
-        select(Resource).where(Resource.muse_id == muse_id)
-    ).all())
-    session.add(muse)
     session.commit()
     if pending:
         await maybe_enqueue_kl_build(muse_id, request.app.state.arq_pool, session)
