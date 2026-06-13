@@ -567,68 +567,160 @@
   </footer>
 
   <script>
-    /* ── PARTICLE NETWORK ── */
+    /* ── WORLD MAP ── */
     (function () {
       const canvas = document.getElementById('hero-canvas');
       const ctx = canvas.getContext('2d');
-      const ACCENT = '212, 119, 76';
-      const COUNT = 52;
-      const MAX_DIST = 155;
-      let W, H, particles;
 
-      function resize() {
-        W = canvas.width  = canvas.offsetWidth;
-        H = canvas.height = canvas.offsetHeight;
+      // Simplified continent outlines [lon, lat] — rasterised onto offscreen canvas
+      const LANDS = [
+        // North America
+        [[-168,72],[-153,57],[-130,54],[-124,42],[-117,32],[-110,23],
+         [-104,20],[-88,16],[-84,10],[-79,8],[-82,9],[-86,16],
+         [-90,29],[-82,25],[-80,25],[-75,35],[-70,42],[-66,44],
+         [-55,47],[-80,50],[-96,50],[-110,54],[-140,60],[-168,72]],
+        // Greenland
+        [[-44,83],[-18,76],[-18,70],[-26,68],[-44,65],[-54,68],[-56,74],[-44,83]],
+        // South America
+        [[-80,12],[-60,12],[-50,5],[-35,-3],[-35,-22],[-52,-34],
+         [-64,-55],[-68,-50],[-74,-42],[-82,-8],[-80,12]],
+        // Europe
+        [[-10,36],[3,43],[15,38],[28,41],[36,42],[44,44],
+         [40,50],[30,60],[25,66],[18,70],[30,72],[28,65],[32,58],
+         [24,55],[15,54],[8,55],[5,52],[0,51],[-5,48],[-10,36]],
+        // Africa
+        [[-17,15],[-16,25],[-5,37],[10,37],[33,31],[42,12],[48,11],
+         [44,8],[40,5],[42,-1],[40,-11],[35,-28],[27,-35],[17,-28],
+         [12,-18],[8,-2],[8,4],[-5,4],[-12,8],[-17,15]],
+        // Asia — main body (Russia + Central/East Asia, excl. peninsulas)
+        [[44,44],[55,42],[60,58],[68,68],[80,74],[140,74],[170,70],
+         [170,58],[145,44],[142,40],[130,30],[122,24],[105,10],
+         [100,24],[90,26],[78,28],[60,22],[44,22],[42,37],[44,44]],
+        // India
+        [[68,24],[80,28],[88,22],[80,10],[77,8],[68,24]],
+        // Indochina
+        [[100,22],[108,16],[104,1],[108,1],[120,4],[116,20],[100,22]],
+        // Australia
+        [[114,-22],[118,-20],[122,-14],[130,-12],[138,-14],[142,-10],
+         [148,-20],[154,-28],[151,-34],[148,-38],[142,-38],[137,-36],
+         [132,-34],[124,-34],[115,-34],[112,-26],[114,-22]],
+        // Antarctica
+        [[-180,-70],[-100,-72],[0,-70],[100,-68],[180,-70],
+         [180,-90],[-180,-90],[-180,-70]],
+      ];
+
+      const COLS = 120, ROWS = 60;
+      let W, H, landDots = [], arcs = [];
+
+      function buildLandDots() {
+        const OW = 1200, OH = 600;
+        const off = document.createElement('canvas');
+        off.width = OW; off.height = OH;
+        const oc = off.getContext('2d');
+        oc.fillStyle = '#000';
+        LANDS.forEach(poly => {
+          oc.beginPath();
+          poly.forEach(([lon, lat], i) => {
+            const x = (lon + 180) / 360 * OW;
+            const y = (90 - lat) / 180 * OH;
+            i === 0 ? oc.moveTo(x, y) : oc.lineTo(x, y);
+          });
+          oc.closePath();
+          oc.fill();
+        });
+        const px = oc.getImageData(0, 0, OW, OH).data;
+        landDots = [];
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const sx = Math.floor((c + 0.5) / COLS * OW);
+            const sy = Math.floor((r + 0.5) / ROWS * OH);
+            if (px[(sy * OW + sx) * 4] > 64) landDots.push({ c, r });
+          }
+        }
       }
 
-      function rand(min, max) { return min + (max - min) * Math.random(); }
-
-      function initParticles() {
-        particles = Array.from({ length: COUNT }, () => ({
-          x: rand(0, W), y: rand(0, H),
-          vx: rand(-0.28, 0.28), vy: rand(-0.28, 0.28),
-          r: rand(1.8, 3.2),
-        }));
+      function dotXY(d) {
+        return [(d.c + 0.5) / COLS * W, (d.r + 0.5) / ROWS * H];
       }
 
-      function draw() {
+      function spawnArc() {
+        const a = landDots[Math.floor(Math.random() * landDots.length)];
+        const b = landDots[Math.floor(Math.random() * landDots.length)];
+        const [x1, y1] = dotXY(a);
+        const [x2, y2] = dotXY(b);
+        const dx = x2 - x1, dy = y2 - y1;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < W * 0.2) return;
+        arcs.push({ x1, y1, x2, y2, dist, t: 0 });
+      }
+
+      function drawArc(arc) {
+        const { x1, y1, x2, y2, dist, t } = arc;
+        // Control point curves up (polar-route look)
+        const cpx = (x1 + x2) / 2;
+        const cpy = (y1 + y2) / 2 - dist * 0.32;
+        const drawT = Math.min(t, 1);
+        // Fade envelope: grow 0→0.5, full 0.5→1.5, fade 1.5→2
+        const fade = t < 0.5 ? t * 2 : t > 1.5 ? (2 - t) * 2 : 1;
+
+        ctx.beginPath();
+        const STEPS = 50;
+        for (let i = 0; i <= Math.floor(STEPS * drawT); i++) {
+          const s = i / STEPS;
+          const bx = (1-s)*(1-s)*x1 + 2*(1-s)*s*cpx + s*s*x2;
+          const by = (1-s)*(1-s)*y1 + 2*(1-s)*s*cpy + s*s*y2;
+          i === 0 ? ctx.moveTo(bx, by) : ctx.lineTo(bx, by);
+        }
+        ctx.strokeStyle = `rgba(212,119,76,${fade * 0.38})`;
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+
+        // Glowing head dot while arc is still growing
+        if (t < 1) {
+          const s = drawT;
+          const ex = (1-s)*(1-s)*x1 + 2*(1-s)*s*cpx + s*s*x2;
+          const ey = (1-s)*(1-s)*y1 + 2*(1-s)*s*cpy + s*s*y2;
+          ctx.beginPath();
+          ctx.arc(ex, ey, 2.8, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(212,119,76,${fade * 0.8})`;
+          ctx.fill();
+        }
+      }
+
+      let lastTs = 0, spawnClock = 0;
+
+      function frame(ts) {
+        const dt = Math.min((ts - lastTs) / 1000, 0.05);
+        lastTs = ts;
         ctx.clearRect(0, 0, W, H);
 
-        for (let i = 0; i < COUNT; i++) {
-          const p = particles[i];
-          p.x += p.vx; p.y += p.vy;
-          if (p.x < 0 || p.x > W) p.vx *= -1;
-          if (p.y < 0 || p.y > H) p.vy *= -1;
-
-          for (let j = i + 1; j < COUNT; j++) {
-            const q = particles[j];
-            const dx = p.x - q.x, dy = p.y - q.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < MAX_DIST) {
-              const alpha = (1 - dist / MAX_DIST) * 0.18;
-              ctx.beginPath();
-              ctx.strokeStyle = `rgba(${ACCENT}, ${alpha})`;
-              ctx.lineWidth = 1;
-              ctx.moveTo(p.x, p.y);
-              ctx.lineTo(q.x, q.y);
-              ctx.stroke();
-            }
-          }
-
+        ctx.fillStyle = 'rgba(212,119,76,0.2)';
+        for (const d of landDots) {
+          const [x, y] = dotXY(d);
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${ACCENT}, 0.35)`;
+          ctx.arc(x, y, 1.5, 0, Math.PI * 2);
           ctx.fill();
         }
 
-        requestAnimationFrame(draw);
+        spawnClock += dt;
+        if (spawnClock > 0.9 && arcs.length < 7) { spawnClock = 0; spawnArc(); }
+
+        arcs = arcs.filter(a => a.t < 2);
+        for (const arc of arcs) { arc.t += dt * 0.42; drawArc(arc); }
+
+        requestAnimationFrame(frame);
       }
 
-      const ro = new ResizeObserver(() => { resize(); });
+      function resize() {
+        W = canvas.width = canvas.offsetWidth;
+        H = canvas.height = canvas.offsetHeight;
+      }
+
+      buildLandDots();
+      const ro = new ResizeObserver(() => resize());
       ro.observe(canvas.parentElement);
       resize();
-      initParticles();
-      draw();
+      requestAnimationFrame(ts => { lastTs = ts; frame(ts); });
     })();
 
     /* ── TYPEWRITER ── */
