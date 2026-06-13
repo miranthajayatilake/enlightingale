@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Backgrounds ─────────────────────────────────────────────────────────── */
+  --color-cream:        #F7F3EC;
+  --color-surface:      #FFFFFF;
+  --color-cream-hover:  #EDE8DC;
+  --color-cream-muted:  #E4DDCE;
+
+  /* ── Sidebar ─────────────────────────────────────────────────────────────── */
+  --color-sidebar:        #1C1814;
+  --color-sidebar-hover:  #2C2620;
+  --color-sidebar-active: #352E28;
+  --color-sidebar-text:   #F0EAD8;
+  --color-sidebar-muted:  #8C7E6E;
+
+  /* ── Typography ──────────────────────────────────────────────────────────── */
+  --color-ink:          #1A1814;
+  --color-ink-secondary:#5C554A;
+  --color-ink-muted:    #9C9080;
+  --color-ink-inverse:  #F7F3EC;
+
+  /* ── Accent — terracotta ──────────────────────────────────────────────────── */
+  --color-accent:       #D4774C;
+  --color-accent-hover: #BF6640;
+  --color-accent-light: #F5E8DE;
+  --color-accent-text:  #A0502C;
+
+  /* ── Semantic ────────────────────────────────────────────────────────────── */
+  --color-success: #4A7C59;
+  --color-warning: #B5882A;
+  --color-error:   #A0402C;
+  --color-info:    #3A6891;
+
+  /* ── Borders ─────────────────────────────────────────────────────────────── */
+  --color-border:        #D8D0C0;
+  --color-border-subtle: #E8E2D5;
+  --color-border-strong: #B8B0A0;
+
+  /* ── Typography ──────────────────────────────────────────────────────────── */
+  --font-sans:  'DM Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Lora', 'Georgia', ui-serif, serif;
+  --font-mono:  'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* ── Border radius ───────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Shadows ─────────────────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 2px rgba(26, 24, 20, 0.06);
+  --shadow-md: 0 2px 8px rgba(26, 24, 20, 0.08), 0 1px 2px rgba(26, 24, 20, 0.04);
+  --shadow-lg: 0 8px 24px rgba(26, 24, 20, 0.10), 0 2px 4px rgba(26, 24, 20, 0.06);
+  --shadow-xl: 0 16px 48px rgba(26, 24, 20, 0.12), 0 4px 8px rgba(26, 24, 20, 0.08);
+}
+
+/* ── Base reset ────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

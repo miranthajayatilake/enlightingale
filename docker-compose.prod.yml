@@ -1,0 +1,18 @@
+version: '3.9'
+
+# Layered on top of docker-compose.yml for AWS EC2 deployment.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  backend:
+    restart: always
+    volumes:
+      - /data/chroma:/app/data/chroma   # EBS volume mount
+
+  worker:
+    restart: always
+    volumes:
+      - /data/chroma:/app/data/chroma   # EBS volume mount
+
+  frontend:
+    restart: always

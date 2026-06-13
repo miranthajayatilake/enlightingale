@@ -1,0 +1,94 @@
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlmodel import Session, select
+
+from models.database import get_session
+from models.muse import Muse
+from models.job import BackgroundJob, JobRead
+from models.resource import Resource, ResourceRead
+
+router = APIRouter(prefix="/muses/{muse_id}/agent", tags=["research-agent"])
+
+
+def _muse_or_404(muse_id: str, session: Session) -> Muse:
+    muse = session.get(Muse, muse_id)
+    if not muse:
+        raise HTTPException(status_code=404, detail="Muse not found")
+    return muse
+
+
+def _latest_agent_job(muse_id: str, session: Session) -> BackgroundJob | None:
+    return session.exec(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.muse_id == muse_id,
+            BackgroundJob.job_type == "research_agent",
+        )
+        .order_by(BackgroundJob.created_at.desc())  # type: ignore[arg-type]
+    ).first()
+
+
+@router.post("/run", response_model=JobRead, status_code=202)
+async def run_agent(
+    muse_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    muse = _muse_or_404(muse_id, session)
+
+    job = BackgroundJob(muse_id=muse_id, job_type="research_agent")
+    session.add(job)
+    muse.agent_status = "running"
+    session.add(muse)
+    session.commit()
+    session.refresh(job)
+
+    await request.app.state.arq_pool.enqueue_job(
+        "run_research_agent", muse_id=muse_id, job_id=job.id
+    )
+    return job
+
+
+@router.get("/status", response_model=JobRead)
+def agent_status(muse_id: str, session: Session = Depends(get_session)):
+    _muse_or_404(muse_id, session)
+    job = _latest_agent_job(muse_id, session)
+    if not job:
+        raise HTTPException(status_code=404, detail="No agent job found for this Muse")
+    return job
+
+
+@router.get("/results")
+def agent_results(muse_id: str, session: Session = Depends(get_session)):
+    _muse_or_404(muse_id, session)
+    job = _latest_agent_job(muse_id, session)
+    resources = session.exec(
+        select(Resource).where(
+            Resource.muse_id == muse_id,
+            Resource.origin == "research_agent",
+        )
+    ).all()
+    return {
+        "job": job,
+        "resources": [ResourceRead.model_validate(r) for r in resources],
+        "report": job.result if job else None,
+    }
+
+
+@router.post("/approve-all")
+def approve_all(muse_id: str, session: Session = Depends(get_session)):
+    muse = _muse_or_404(muse_id, session)
+    pending = session.exec(
+        select(Resource).where(
+            Resource.muse_id == muse_id,
+            Resource.approved == False,  # noqa: E712
+        )
+    ).all()
+    for r in pending:
+        r.approved = True
+        session.add(r)
+    muse.resource_count = session.exec(
+        select(Resource).where(Resource.muse_id == muse_id)
+    ).all().__len__()
+    session.add(muse)
+    session.commit()
+    return {"approved": len(pending)}
