@@ -76,3 +76,11 @@ body {
     display: none;
   }
 }
+
+@keyframes build-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+@utility animate-build-sweep {
+  animation: build-sweep 1.8s ease-in-out infinite;
+}

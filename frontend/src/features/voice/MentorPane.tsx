@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useVoiceSession, type VoiceStatus } from '@/features/voice/useVoiceSession'
 import { useTourStore, type TourPhase } from '@/features/canvas/tourStore'
+import { useMentorPaneStore } from '@/features/voice/mentorPaneStore'
 import type { Muse } from '@/lib/api'
 import { Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
@@ -14,6 +15,8 @@ export function MentorPane({ muse }: Props) {
   const [expanded, setExpanded] = useState(false)
   const { status, transcript, isMuted, error, start, end, toggleMute } = useVoiceSession(muse.id)
   const tourPhase = useTourStore((s) => s.tourPhase)
+  const openRequested = useMentorPaneStore((s) => s.openRequested)
+  const clearOpenRequest = useMentorPaneStore((s) => s.clearOpenRequest)
   const hasModelSpoken = transcript.some((t) => t.role === 'model' && t.text.trim().length > 0)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -35,6 +38,14 @@ export function MentorPane({ muse }: Props) {
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: 'smooth' })
   }, [transcript])
+
+  // Expand when another part of the UI requests it (e.g. "Ask the Mentor" CTA)
+  useEffect(() => {
+    if (openRequested) {
+      setExpanded(true)
+      clearOpenRequest()
+    }
+  }, [openRequested, clearOpenRequest])
 
   const museName = muse.name.length > 22 ? 'this Muse' : muse.name
 

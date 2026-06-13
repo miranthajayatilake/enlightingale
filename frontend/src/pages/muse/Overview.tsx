@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { KnowledgeLayer, Muse, MuseCanvas } from '@/lib/api'
+import type { KnowledgeLayer, Muse, MuseCanvas, Resource } from '@/lib/api'
 import { api } from '@/lib/api'
 import { Button, Spinner } from '@/design-system'
 import { Canvas } from '@/features/canvas/Canvas'
-import { CanvasSkeleton } from '@/features/canvas/CanvasSkeleton'
+import { CanvasBuildStages } from '@/features/canvas/CanvasBuildStages'
 
 export function MuseOverview() {
   const { muse } = useOutletContext<{ muse: Muse }>()
@@ -28,6 +28,20 @@ export function MuseOverview() {
     },
   })
 
+  // Poll resources while anything is building, to drive the "Reading sources" stage.
+  const isBuilding = kl?.status === 'building' || canvas?.status === 'building'
+    || (!kl || kl.status === 'idle') || (kl?.status === 'ready' && (!canvas || canvas.status !== 'ready' && canvas.status !== 'failed'))
+  const { data: resources = [] } = useQuery<Resource[]>({
+    queryKey: ['resources', muse.id],
+    queryFn: () => api.get<Resource[]>(`/muses/${muse.id}/resources`),
+    enabled: isBuilding,
+    refetchInterval: isBuilding ? 3000 : false,
+  })
+
+  const hasProcessingResources = resources.some(
+    (r) => r.status === 'pending' || r.status === 'processing'
+  )
+
   const buildCanvas = useMutation({
     mutationFn: () => api.post(`/muses/${muse.id}/canvas/build`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['canvas', muse.id] }),
@@ -42,8 +56,6 @@ export function MuseOverview() {
   })
 
   // Auto-generate the Canvas once the Knowledge Layer is ready but no Canvas exists yet.
-  // Guard: only act after canvas query has resolved (canvasLoaded) to avoid rebuilding a
-  // perfectly good persisted canvas on cold load. Idempotent per Muse.
   const canvasTriggeredFor = useRef<string | null>(null)
   useEffect(() => {
     if (!canvasLoaded) return
@@ -55,8 +67,7 @@ export function MuseOverview() {
     }
   }, [canvasLoaded, kl?.status, canvas, muse.id, buildCanvas])
 
-  // Auto-trigger KL build for Muses that pre-date v0.3 automation (idle KL, no Canvas).
-  // New Muses have their KL enqueued by the backend on creation — this is only a fallback.
+  // Fallback: auto-trigger KL for pre-v0.3 Muses that have an idle KL with no Canvas.
   const klTriggeredFor = useRef<string | null>(null)
   useEffect(() => {
     if (!klLoaded || !canvasLoaded) return
@@ -82,7 +93,7 @@ export function MuseOverview() {
 
   // ── Ready ────────────────────────────────────────────────────────────────
   if (canvas && canvasStatus === 'ready') {
-    return <Canvas muse={muse} canvas={canvas} rebuilding={klStatus === 'building'} />
+    return <Canvas muse={muse} canvas={canvas} />
   }
 
   // ── KL failed ────────────────────────────────────────────────────────────
@@ -113,11 +124,15 @@ export function MuseOverview() {
     )
   }
 
-  // ── Building (or idle — KL auto-trigger will fire momentarily) ───────────
-  const message = klStatus === 'building' ? 'Building the knowledge layer…' : 'Composing your Canvas…'
+  // ── Building (or idle → KL auto-trigger will fire momentarily) ───────────
   return (
     <div className="h-full overflow-y-auto">
-      <CanvasSkeleton message={message} />
+      <CanvasBuildStages
+        muse={muse}
+        klStatus={klStatus}
+        canvasStatus={canvasStatus}
+        hasProcessingResources={hasProcessingResources}
+      />
     </div>
   )
 }

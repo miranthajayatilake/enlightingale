@@ -14,9 +14,12 @@ interface DisplayMessage {
 
 interface Props {
   messages: DisplayMessage[]
+  onSave?: (msg: DisplayMessage) => void
+  savingId?: string | null
+  savedIds?: Set<string>
 }
 
-export function ChatMessages({ messages }: Props) {
+export function ChatMessages({ messages, onSave, savingId, savedIds }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -38,14 +41,30 @@ export function ChatMessages({ messages }: Props) {
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
+        <MessageBubble
+          key={msg.id}
+          message={msg}
+          onSave={onSave}
+          saving={savingId === msg.id}
+          saved={savedIds?.has(msg.id) ?? false}
+        />
       ))}
       <div ref={bottomRef} />
     </div>
   )
 }
 
-function MessageBubble({ message }: { message: DisplayMessage }) {
+function MessageBubble({
+  message,
+  onSave,
+  saving,
+  saved,
+}: {
+  message: DisplayMessage
+  onSave?: (msg: DisplayMessage) => void
+  saving: boolean
+  saved: boolean
+}) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -98,8 +117,23 @@ function MessageBubble({ message }: { message: DisplayMessage }) {
         )}
       </div>
 
-      {message.citations.length > 0 && !message.isStreaming && (
-        <CitationChips citations={message.citations} />
+      {!message.isStreaming && (
+        <div className="flex items-start gap-2 pl-1 flex-wrap">
+          {message.citations.length > 0 && (
+            <div className="flex-1 min-w-0">
+              <CitationChips citations={message.citations} />
+            </div>
+          )}
+          {onSave && message.content && (
+            <button
+              onClick={() => onSave(message)}
+              disabled={saving || saved}
+              className="shrink-0 text-xs text-ink-muted hover:text-accent disabled:opacity-50 transition-colors ml-auto"
+            >
+              {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save to resources'}
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

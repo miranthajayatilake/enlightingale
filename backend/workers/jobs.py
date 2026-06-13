@@ -2,9 +2,9 @@ from arq.connections import RedisSettings
 from core.config import settings
 
 
-async def run_research_agent(ctx, muse_id: str, job_id: str) -> None:
+async def run_research_agent(ctx, muse_id: str, job_id: str, focus: str | None = None) -> None:
     from services.research_agent.agent import run
-    await run(muse_id=muse_id, job_id=job_id, redis_conn=ctx["redis"])
+    await run(muse_id=muse_id, job_id=job_id, redis_conn=ctx["redis"], focus=focus)
 
 
 async def run_process_resource(ctx, resource_id: str, job_id: str) -> None:

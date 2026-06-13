@@ -2,6 +2,8 @@ import type { CanvasSection } from '@/lib/api'
 
 export interface SectionProps {
   section: CanvasSection
+  museId?: string
+  onFocusedResearch?: (focus: string) => void
 }
 
 /** Narrow a section's loosely-typed `data` to an expected shape. */

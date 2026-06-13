@@ -168,6 +168,35 @@ export function ChatPanel({ muse }: { muse: Muse }) {
     return () => streamCleanupRef.current?.()
   }, [])
 
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+
+  const handleSave = useCallback(
+    async (msg: DisplayMessage) => {
+      if (!msg.content || savedIds.has(msg.id) || savingId) return
+      setSavingId(msg.id)
+      // Derive a short title from the first line of the response
+      const firstLine = msg.content.replace(/[#*_`]/g, '').split('\n')[0].trim()
+      const title = firstLine.length > 80 ? firstLine.slice(0, 80).trimEnd() + '…' : firstLine
+      try {
+        await api.post(`/muses/${muse.id}/resources`, {
+          source_type: 'text',
+          title,
+          content: msg.content,
+        })
+        setSavedIds((prev) => new Set([...prev, msg.id]))
+        queryClient.invalidateQueries({ queryKey: ['resources', muse.id] })
+        queryClient.invalidateQueries({ queryKey: ['muse', muse.id] })
+        queryClient.invalidateQueries({ queryKey: ['muses'] })
+      } catch {
+        // silently fail — no permanent state was changed
+      } finally {
+        setSavingId(null)
+      }
+    },
+    [muse.id, savingId, savedIds, queryClient]
+  )
+
   const lastAssistantMsg = [...displayMessages].reverse().find((m) => m.role === 'assistant')
   const latestCitations = lastAssistantMsg?.citations ?? []
 
@@ -242,7 +271,12 @@ export function ChatPanel({ muse }: { muse: Muse }) {
               </Button>
             </div>
           ) : (
-            <ChatMessages messages={displayMessages} />
+            <ChatMessages
+              messages={displayMessages}
+              onSave={handleSave}
+              savingId={savingId}
+              savedIds={savedIds}
+            />
           )}
           {sessionId && <ChatInput onSend={sendMessage} disabled={isStreaming} />}
         </div>

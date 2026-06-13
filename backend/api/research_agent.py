@@ -1,4 +1,6 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from models.database import get_session
@@ -6,6 +8,10 @@ from models.muse import Muse
 from models.job import BackgroundJob, JobRead
 from models.resource import Resource, ResourceRead
 from services.knowledge.autorebuild import maybe_enqueue_kl_build
+
+
+class AgentRunBody(BaseModel):
+    focus: Optional[str] = None
 
 router = APIRouter(prefix="/muses/{muse_id}/agent", tags=["research-agent"])
 
@@ -31,6 +37,7 @@ def _latest_agent_job(muse_id: str, session: Session) -> BackgroundJob | None:
 @router.post("/run", response_model=JobRead, status_code=202)
 async def run_agent(
     muse_id: str,
+    body: AgentRunBody,
     request: Request,
     session: Session = Depends(get_session),
 ):
@@ -44,7 +51,7 @@ async def run_agent(
     session.refresh(job)
 
     await request.app.state.arq_pool.enqueue_job(
-        "run_research_agent", muse_id=muse_id, job_id=job.id
+        "run_research_agent", muse_id=muse_id, job_id=job.id, focus=body.focus
     )
     return job
 

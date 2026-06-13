@@ -38,7 +38,7 @@ async def _pub(redis_conn, job_id: str, payload: dict) -> None:
     await redis_conn.publish(f"job_progress:{job_id}", json.dumps(payload))
 
 
-async def run(muse_id: str, job_id: str, redis_conn) -> None:
+async def run(muse_id: str, job_id: str, redis_conn, focus: str | None = None) -> None:
     # ── Load muse ────────────────────────────────────────────────────────────
     with Session(engine) as session:
         muse = session.get(Muse, muse_id)
@@ -49,10 +49,11 @@ async def run(muse_id: str, job_id: str, redis_conn) -> None:
 
     try:
         # ── 1. Plan (0 → 15 %) ───────────────────────────────────────────────
-        await _set_job(job_id, 5, "Planning research…")
-        await _pub(redis_conn, job_id, {"type": "progress", "progress": 5, "step": "Planning research…"})
+        step_label = f"Planning focused research: {focus[:50]}…" if focus else "Planning research…"
+        await _set_job(job_id, 5, step_label)
+        await _pub(redis_conn, job_id, {"type": "progress", "progress": 5, "step": step_label})
 
-        plan = await planner.generate_research_plan(name, description, level)
+        plan = await planner.generate_research_plan(name, description, level, focus=focus)
         subtopics = plan.get("subtopics", [])
 
         await _set_job(job_id, 15, f"Research plan ready — {len(subtopics)} subtopics")

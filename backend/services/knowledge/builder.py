@@ -173,35 +173,35 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
 
         await _pub(redis_conn, job_id, {"type": "complete", "progress": 100})
 
-        # Auto-trigger Canvas regeneration: the knowledge base just changed, so the
-        # Overview's visual presentation (and what the Mentor teaches from it) must
-        # refresh. Failure here must not fail the Knowledge Layer build.
+        # Auto-build the Canvas only on the very first KL build (no Canvas exists yet).
+        # When a Canvas already exists, leave it in place — staleness is surfaced via
+        # source_signature and the user triggers a rebuild from the Canvas header banner.
         try:
             from models.canvas import MuseCanvas
 
             canvas_job_id = None
             with Session(engine) as session:
-                # Skip if a Canvas build is already queued/running for this Muse.
-                active = session.exec(
-                    select(BackgroundJob).where(
-                        BackgroundJob.muse_id == muse_id,
-                        BackgroundJob.job_type == "canvas",
-                        BackgroundJob.status.in_(["queued", "running"]),
-                    )
-                ).first()
-                if not active:
-                    canvas = session.get(MuseCanvas, muse_id)
-                    if not canvas:
-                        canvas = MuseCanvas(muse_id=muse_id)
-                        session.add(canvas)
-                    canvas.status = "building"
-                    canvas.error = None
-
-                    canvas_job = BackgroundJob(muse_id=muse_id, job_type="canvas")
-                    session.add(canvas_job)
-                    session.commit()
-                    session.refresh(canvas_job)
-                    canvas_job_id = canvas_job.id
+                canvas = session.get(MuseCanvas, muse_id)
+                first_build = not canvas or canvas.status not in ("ready", "building")
+                if first_build:
+                    active = session.exec(
+                        select(BackgroundJob).where(
+                            BackgroundJob.muse_id == muse_id,
+                            BackgroundJob.job_type == "canvas",
+                            BackgroundJob.status.in_(["queued", "running"]),
+                        )
+                    ).first()
+                    if not active:
+                        if not canvas:
+                            canvas = MuseCanvas(muse_id=muse_id)
+                            session.add(canvas)
+                        canvas.status = "building"
+                        canvas.error = None
+                        canvas_job = BackgroundJob(muse_id=muse_id, job_type="canvas")
+                        session.add(canvas_job)
+                        session.commit()
+                        session.refresh(canvas_job)
+                        canvas_job_id = canvas_job.id
 
             if canvas_job_id:
                 await redis_conn.enqueue_job(
@@ -209,6 +209,24 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
                 )
         except Exception as canvas_exc:
             await _pub(redis_conn, job_id, {"type": "progress", "progress": 100, "step": f"Canvas enqueue skipped: {canvas_exc}"})
+
+        # If any approved resources finished processing while this build was running
+        # (the debounce blocked their rebuild trigger), kick off a fresh build now.
+        try:
+            with Session(engine) as session:
+                unembedded = session.exec(
+                    select(Resource).where(
+                        Resource.muse_id == muse_id,
+                        Resource.approved == True,  # noqa: E712
+                        Resource.status == "ready",
+                        Resource.embedded == False,  # noqa: E712
+                    )
+                ).first()
+                if unembedded:
+                    from services.knowledge.autorebuild import maybe_enqueue_kl_build
+                    await maybe_enqueue_kl_build(muse_id, redis_conn, session)
+        except Exception:
+            pass
 
     except Exception as exc:
         error_msg = f"Knowledge layer build failed: {exc}"
