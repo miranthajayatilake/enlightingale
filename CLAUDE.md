@@ -12,7 +12,7 @@ This file is the complete reference for working on this codebase. Read it before
 
 The product is in active Phase 1 development. The full PRD is at `project-management/PRD-Enlightingale.md`. The Phase 1 development plan is at `docs/plans/phase-1-development-plan.md`.
 
-**Release status:** v0.3.1 is the latest tagged release. Codebase is a git repo with `main` tracking `github.com/miranthajayatilake/enlightingale`. v0.3.2 (free-form canvas + data sources section + Mentor opening intro) is built but not yet tagged. `.env` and `data/` are gitignored — never commit them.
+**Release status:** v0.3.2 is the latest tagged release. Codebase is a git repo with `main` tracking `github.com/miranthajayatilake/enlightingale`. `.env` and `data/` are gitignored — never commit them.
 
 ---
 
@@ -493,6 +493,7 @@ PRD: `docs/plans/v0.3/PRD-v0.3.2-voice-intro-and-canvas-flow.md`.
 - **Audio dedup (backend `_recv_loop`)**: read audio from `server_content.model_turn` first and use the `response.data` shorthand only as a fallback when no audio was found — some SDK versions expose the same bytes on both paths, which would otherwise double-play.
 - **Stale-session protection (`useVoiceSession`)**: `start()` calls `cleanup()` first and bumps a `generationRef`; every WebSocket/mic callback is stamped with its generation and ignored if a newer session has started. This prevents a previous session's events from playing into a new `AudioContext` (the overlapping-voices bug).
 - **Transcript pacing — proportional reveal tied to the audio clock**: audio from Gemini streams *faster than real time*, so the play queue (`nextPlayRef`) runs far ahead of `AudioContext.currentTime`. Do NOT show transcript on arrival (races ahead) and do NOT tag it against the queue tail (drifts once the buffer deepens). Instead, per model *turn*: anchor `turnStartTime` to the first audio chunk's play time, accumulate the turn's text in `turnTextRef`, and an 80 ms flush loop reveals the prefix whose length matches the fraction of the turn's audio already played (`(currentTime − turnStartTime + LEAD) / (nextPlayRef − turnStartTime)`), with a ~0.3 s lead so text leads the voice slightly. Turn lifecycle: `state:speaking` (or first audio, as fallback) → `beginTurn()`; text arriving before the first audio also opens the turn so it can't be wiped; `state:listening` closes the turn but reveal keeps draining the still-playing buffer.
+- **Guided Tour intro phase (v0.3.2)**: `TourController` starts in phase `"intro"` when `intro_text` is provided. `build_tour_intro_text()` loads the muse's research focus, approved resources, and section titles and formats a ~30–45 s spoken orientation. The frontend emits `tour_state: 'intro'`; no `canvas_section` highlight fires until `on_turn_complete()` transitions to `"touring"` and dispatches the first section with `kind="first_after_intro"`. Do not collapse the intro phase into the first section dispatch — the intro is an unscripted orientation, not a section narration.
 
 ---
 
