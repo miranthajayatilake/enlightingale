@@ -3,7 +3,6 @@ from sqlmodel import Session, select
 
 from models.database import get_session
 from models.muse import Muse
-from models.resource import Resource
 from models.job import BackgroundJob, JobRead
 from models.knowledge import KnowledgeLayer, KnowledgeLayerRead
 
@@ -31,21 +30,7 @@ async def build_knowledge(
 ):
     _muse_or_404(muse_id, session)
 
-    ready_count = len(session.exec(
-        select(Resource).where(
-            Resource.muse_id == muse_id,
-            Resource.approved == True,  # noqa: E712
-            Resource.status == "ready",
-        )
-    ).all())
-    if ready_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="No approved resources to build from. Add and approve resources first.",
-        )
-
     # Don't start a second build if one is already in flight — return the running job.
-    # (Prevents duplicate, racing rebuilds from rapid clicks of "Refresh overview".)
     existing = session.exec(
         select(BackgroundJob).where(
             BackgroundJob.muse_id == muse_id,

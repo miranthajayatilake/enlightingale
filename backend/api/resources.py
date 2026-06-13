@@ -10,6 +10,7 @@ from models.job import BackgroundJob
 from models.muse import Muse
 from models.resource import Resource, ResourceRead
 from storage.s3 import get_storage_service
+from services.knowledge.autorebuild import maybe_enqueue_kl_build
 
 router = APIRouter(prefix="/muses/{muse_id}/resources", tags=["resources"])
 
@@ -139,32 +140,38 @@ async def upload_resource(
 
 
 @router.patch("/{resource_id}", response_model=ResourceRead)
-def update_resource(
+async def update_resource(
     muse_id: str,
     resource_id: str,
     body: ResourceUpdate,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     resource = session.get(Resource, resource_id)
     if not resource or resource.muse_id != muse_id:
         raise HTTPException(status_code=404, detail="Resource not found")
+    approving = body.approved is True and not resource.approved
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(resource, field, value)
     session.add(resource)
     session.commit()
     session.refresh(resource)
+    if approving:
+        await maybe_enqueue_kl_build(muse_id, request.app.state.arq_pool, session)
     return resource
 
 
 @router.delete("/{resource_id}", status_code=204)
-def delete_resource(
+async def delete_resource(
     muse_id: str,
     resource_id: str,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     resource = session.get(Resource, resource_id)
     if not resource or resource.muse_id != muse_id:
         raise HTTPException(status_code=404, detail="Resource not found")
+    was_approved = resource.approved
     session.delete(resource)
 
     muse = session.get(Muse, muse_id)
@@ -173,3 +180,5 @@ def delete_resource(
         session.add(muse)
 
     session.commit()
+    if was_approved:
+        await maybe_enqueue_kl_build(muse_id, request.app.state.arq_pool, session)

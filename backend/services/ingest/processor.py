@@ -60,6 +60,7 @@ async def process_resource(resource_id: str, job_id: str, redis_conn) -> None:
 
         await _pub(redis_conn, job_id, {"type": "progress", "progress": 90, "step": "Saving…"})
 
+        is_approved = False
         with Session(engine) as session:
             res = session.get(Resource, resource_id)
             if not res:
@@ -68,6 +69,7 @@ async def process_resource(resource_id: str, job_id: str, redis_conn) -> None:
             res.summary = summary
             res.title = new_title
             res.status = "ready"
+            is_approved = res.approved
             session.add(res)
 
             job_obj = session.get(BackgroundJob, job_id)
@@ -81,6 +83,14 @@ async def process_resource(resource_id: str, job_id: str, redis_conn) -> None:
             session.commit()
 
         await _pub(redis_conn, job_id, {"type": "complete", "progress": 100})
+
+        if is_approved:
+            try:
+                from services.knowledge.autorebuild import maybe_enqueue_kl_build
+                with Session(engine) as kl_session:
+                    await maybe_enqueue_kl_build(muse_id, redis_conn, kl_session)
+            except Exception:
+                pass
 
     except Exception as exc:
         error_msg = f"Processing failed: {exc}"

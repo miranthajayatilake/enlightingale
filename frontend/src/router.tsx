@@ -4,8 +4,7 @@ import { Home } from '@/pages/Home'
 import { NewMuse } from '@/pages/NewMuse'
 import { MuseLayout } from '@/pages/muse/MuseLayout'
 import { MuseOverview } from '@/pages/muse/Overview'
-import { Resources } from '@/pages/muse/Resources'
-import { Chat } from '@/pages/muse/Chat'
+import { Research } from '@/pages/muse/Research'
 
 export const router = createBrowserRouter([
   {
@@ -18,10 +17,12 @@ export const router = createBrowserRouter([
         element: <MuseLayout />,
         children: [
           { index: true, element: <MuseOverview /> },
-          { path: 'resources', element: <Resources /> },
-          { path: 'chat',              element: <Chat /> },
-          { path: 'voice',             element: <Navigate to=".." replace /> },
-          // Lessons deprecated in v0.2 — pages kept on disk, routes redirect to Overview
+          { path: 'research', element: <Research /> },
+          // Legacy routes redirect to their new homes
+          { path: 'resources', element: <Navigate to="../research" replace /> },
+          { path: 'chat',      element: <Navigate to="../research" replace /> },
+          { path: 'voice',     element: <Navigate to=".." replace /> },
+          // Lessons deprecated in v0.2 — routes redirect to Canvas
           { path: 'lessons',           element: <Navigate to=".." replace /> },
           { path: 'lessons/:lessonId', element: <Navigate to="../.." replace /> },
         ],

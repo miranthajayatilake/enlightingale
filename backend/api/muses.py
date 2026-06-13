@@ -1,9 +1,10 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from models.database import get_session
 from models.muse import Muse, MuseCreate, MuseUpdate, MuseRead
+from services.knowledge.autorebuild import maybe_enqueue_kl_build
 
 router = APIRouter(prefix="/muses", tags=["muses"])
 
@@ -14,11 +15,12 @@ def list_muses(session: Session = Depends(get_session)):
 
 
 @router.post("", response_model=MuseRead, status_code=201)
-def create_muse(body: MuseCreate, session: Session = Depends(get_session)):
+async def create_muse(body: MuseCreate, request: Request, session: Session = Depends(get_session)):
     muse = Muse(**body.model_dump(), agent_status="idle")
     session.add(muse)
     session.commit()
     session.refresh(muse)
+    await maybe_enqueue_kl_build(muse.id, request.app.state.arq_pool, session)
     return muse
 
 

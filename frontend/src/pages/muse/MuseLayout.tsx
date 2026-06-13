@@ -5,9 +5,8 @@ import { Spinner } from '@/design-system'
 import { MentorPane } from '@/features/voice/MentorPane'
 
 const TABS = [
-  { label: 'Overview',  path: '' },
-  { label: 'Resources', path: 'resources' },
-  { label: 'Chat',      path: 'chat' },
+  { label: 'Canvas',   path: '' },
+  { label: 'Research', path: 'research' },
 ]
 
 export function MuseLayout() {

@@ -138,15 +138,15 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
             {"title": r.title, "summary": r.summary}
             for r in resources if r.summary
         ]
-        synthesis = await synthesizer.synthesize(name, description, summaries) if summaries else ""
+        synthesis = await synthesizer.synthesize(name, description, summaries)
 
         # ── 5. Glossary (80 → 92%) ───────────────────────────────────────────
         await _pub(redis_conn, job_id, {"type": "progress", "progress": 80, "step": "Building glossary…"})
-        glossary = await glossary_builder.build_glossary(name, all_concepts) if all_concepts else []
+        glossary = await glossary_builder.build_glossary(name, all_concepts)
 
         # ── 6. Gaps (92 → 100%) ──────────────────────────────────────────────
         await _pub(redis_conn, job_id, {"type": "progress", "progress": 92, "step": "Analyzing gaps…"})
-        gaps = await gap_analyzer.analyze_gaps(name, description, synthesis, glossary) if synthesis else []
+        gaps = await gap_analyzer.analyze_gaps(name, description, synthesis, glossary)
 
         # ── 7. Persist ───────────────────────────────────────────────────────
         with Session(engine) as session:

@@ -5,6 +5,7 @@ from models.database import get_session
 from models.muse import Muse
 from models.job import BackgroundJob, JobRead
 from models.resource import Resource, ResourceRead
+from services.knowledge.autorebuild import maybe_enqueue_kl_build
 
 router = APIRouter(prefix="/muses/{muse_id}/agent", tags=["research-agent"])
 
@@ -75,7 +76,7 @@ def agent_results(muse_id: str, session: Session = Depends(get_session)):
 
 
 @router.post("/approve-all")
-def approve_all(muse_id: str, session: Session = Depends(get_session)):
+async def approve_all(muse_id: str, request: Request, session: Session = Depends(get_session)):
     muse = _muse_or_404(muse_id, session)
     pending = session.exec(
         select(Resource).where(
@@ -86,9 +87,11 @@ def approve_all(muse_id: str, session: Session = Depends(get_session)):
     for r in pending:
         r.approved = True
         session.add(r)
-    muse.resource_count = session.exec(
+    muse.resource_count = len(session.exec(
         select(Resource).where(Resource.muse_id == muse_id)
-    ).all().__len__()
+    ).all())
     session.add(muse)
     session.commit()
+    if pending:
+        await maybe_enqueue_kl_build(muse_id, request.app.state.arq_pool, session)
     return {"approved": len(pending)}
