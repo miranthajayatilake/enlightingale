@@ -7,7 +7,6 @@ import { MentorPane } from '@/features/voice/MentorPane'
 const TABS = [
   { label: 'Overview',  path: '' },
   { label: 'Resources', path: 'resources' },
-  { label: 'Lessons',   path: 'lessons' },
   { label: 'Chat',      path: 'chat' },
 ]
 
