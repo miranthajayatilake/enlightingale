@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enlightingale — Your Personal Learning Companion</title>
+  <meta name="description" content="Describe what you want to learn. Enlightingale researches it, builds your knowledge base, and teaches you through an interactive voice mentor." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --cream:          #F7F3EC;
+      --cream-hover:    #EDE8DC;
+      --surface:        #FFFFFF;
+      --ink:            #1A1814;
+      --ink-secondary:  #5C554A;
+      --ink-muted:      #9C9080;
+      --accent:         #D4774C;
+      --accent-hover:   #BF6640;
+      --accent-light:   #F5E8DE;
+      --border:         #D8D0C0;
+      --border-strong:  #B8B0A0;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(247, 243, 236, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .nav-logo-mark {
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .nav-logo-text {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      padding: 0.45rem 1.1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+
+    .nav-cta:hover { background: var(--accent-hover); }
+
+    /* ── HERO ── */
+    .hero {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: clamp(5rem, 12vw, 9rem) clamp(1.5rem, 5vw, 2rem) clamp(4rem, 8vw, 7rem);
+      text-align: center;
+    }
+
+    .hero-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--accent-light);
+      color: var(--accent);
+      border: 1px solid rgba(212, 119, 76, 0.25);
+      padding: 0.3rem 0.9rem;
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      margin-bottom: 2rem;
+    }
+
+    .hero-pill-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.6rem, 6vw, 4.2rem);
+      font-weight: 300;
+      line-height: 1.12;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+      margin-bottom: 1.5rem;
+    }
+
+    .hero h1 strong {
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .hero-sub {
+      font-size: clamp(1rem, 2.5vw, 1.2rem);
+      color: var(--ink-secondary);
+      max-width: 560px;
+      margin: 0 auto 2.75rem;
+      line-height: 1.65;
+      font-weight: 300;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      padding: 0.75rem 1.75rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: transparent;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      padding: 0.75rem 1.75rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn-ghost:hover {
+      background: var(--cream-hover);
+      border-color: var(--border-strong);
+    }
+
+    /* ── LOOP VISUAL ── */
+    .loop-section {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: clamp(3.5rem, 7vw, 5.5rem) clamp(1.5rem, 5vw, 2rem);
+    }
+
+    .loop-inner {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1.25rem;
+    }
+
+    .section-heading {
+      text-align: center;
+      font-size: clamp(1.6rem, 3.5vw, 2.25rem);
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      margin-bottom: 0.75rem;
+      line-height: 1.25;
+    }
+
+    .section-sub {
+      text-align: center;
+      font-size: 1rem;
+      color: var(--ink-secondary);
+      max-width: 520px;
+      margin: 0 auto 3.5rem;
+      line-height: 1.65;
+    }
+
+    .loop-steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 640px) {
+      .loop-steps { grid-template-columns: 1fr; }
+    }
+
+    .loop-step {
+      background: var(--cream);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.75rem 1.5rem;
+      position: relative;
+    }
+
+    .loop-step-num {
+      width: 32px;
+      height: 32px;
+      background: var(--accent-light);
+      color: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+
+    .loop-step h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .loop-step p {
+      font-size: 0.9rem;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    /* ── FEATURES ── */
+    .features-section {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: clamp(4rem, 8vw, 6.5rem) clamp(1.5rem, 5vw, 2rem);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+      margin-top: 3.5rem;
+    }
+
+    @media (max-width: 600px) {
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.75rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border-strong);
+      box-shadow: 0 4px 16px rgba(26, 24, 20, 0.06);
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--accent-light);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      margin-bottom: 1.1rem;
+    }
+
+    .feature-card h3 {
+      font-size: 0.975rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .feature-card p {
+      font-size: 0.875rem;
+      color: var(--ink-secondary);
+      line-height: 1.65;
+    }
+
+    /* ── CTA BAND ── */
+    .cta-band {
+      background: var(--ink);
+      padding: clamp(3.5rem, 7vw, 5rem) clamp(1.5rem, 5vw, 2rem);
+      text-align: center;
+    }
+
+    .cta-band h2 {
+      font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+      font-weight: 500;
+      color: #F0EAD8;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+      line-height: 1.3;
+    }
+
+    .cta-band p {
+      font-size: 1rem;
+      color: #8C7E6E;
+      max-width: 440px;
+      margin: 0 auto 2rem;
+      line-height: 1.65;
+    }
+
+    .btn-accent-light {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      padding: 0.8rem 2rem;
+      border-radius: 10px;
+      font-size: 0.975rem;
+      font-weight: 500;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn-accent-light:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--ink);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding: 1.5rem clamp(1.5rem, 5vw, 4rem);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-decoration: none;
+    }
+
+    .footer-logo-mark {
+      width: 22px;
+      height: 22px;
+      background: var(--accent);
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+    }
+
+    .footer-logo-text {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #8C7E6E;
+    }
+
+    footer small {
+      font-size: 0.8rem;
+      color: #5C554A;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a href="#" class="nav-logo">
+      <div class="nav-logo-mark">🪶</div>
+      <span class="nav-logo-text">Enlightingale</span>
+    </a>
+    <a href="https://github.com/miranthajayatilake/enlightingale" class="nav-cta" target="_blank" rel="noopener">
+      View on GitHub
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 9.5L9.5 2.5M9.5 2.5H4M9.5 2.5V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-pill">
+      <div class="hero-pill-dot"></div>
+      Personal AI Learning Companion
+    </div>
+    <h1>Learn anything,<br /><strong>deeply</strong>, at your own pace</h1>
+    <p class="hero-sub">
+      Tell Enlightingale what you want to understand. It researches the topic, builds your knowledge base, and teaches you through an interactive voice mentor — on your schedule, in your words.
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/miranthajayatilake/enlightingale" class="btn-primary" target="_blank" rel="noopener">
+        Get started
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M7 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="#how-it-works" class="btn-ghost">See how it works</a>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="loop-section" id="how-it-works">
+    <div class="loop-inner">
+      <p class="section-label">How it works</p>
+      <h2 class="section-heading">From curiosity to deep understanding<br />in three steps</h2>
+      <p class="section-sub">No courses to browse. No syllabus to design. Just describe what you're curious about and let Enlightingale do the rest.</p>
+      <div class="loop-steps">
+        <div class="loop-step">
+          <div class="loop-step-num">01</div>
+          <h3>Create a Muse</h3>
+          <p>Name a topic and set your current knowledge level. Enlightingale's Research Agent automatically finds the best sources and builds a tailored knowledge base.</p>
+        </div>
+        <div class="loop-step">
+          <div class="loop-step-num">02</div>
+          <h3>Explore your Canvas</h3>
+          <p>Your knowledge is synthesized into a visual Canvas — a structured overview with key concepts, timelines, comparisons, and insights drawn from across all your sources.</p>
+        </div>
+        <div class="loop-step">
+          <div class="loop-step-num">03</div>
+          <h3>Learn with your Mentor</h3>
+          <p>Your AI Mentor narrates the Canvas section by section, answers follow-up questions in real time, and adapts to wherever your curiosity takes you.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features-section" id="features">
+    <p class="section-label">What's inside</p>
+    <h2 class="section-heading">Everything you need to go deep</h2>
+    <p class="section-sub">Enlightingale combines autonomous research, structured knowledge synthesis, and real-time voice interaction into one focused learning space.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔍</div>
+        <h3>Research Agent</h3>
+        <p>Automatically searches the web, evaluates sources, and curates a high-quality reading list — so you start learning immediately, not after hours of bookmarking.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🗂️</div>
+        <h3>Knowledge Layer</h3>
+        <p>Every source is read, summarized, and synthesized into a coherent knowledge layer: key concepts, a glossary, and cross-source insights — all in one place.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🖼️</div>
+        <h3>Overview Canvas</h3>
+        <p>Your Muse's knowledge is presented as a visual Canvas with typed sections — hero context, concept clusters, timelines, comparisons — ready for your Mentor to walk through.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎙️</div>
+        <h3>Voice Mentor</h3>
+        <p>A warm, real-time voice tutor powered by Gemini 2.0 Flash Live. It narrates your Canvas, answers detour questions on the fly, and resumes exactly where you left off.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA BAND -->
+  <section class="cta-band">
+    <h2>Start your first Muse today</h2>
+    <p>Self-hosted, open source, and built for the way curious people actually learn.</p>
+    <a href="https://github.com/miranthajayatilake/enlightingale" class="btn-accent-light" target="_blank" rel="noopener">
+      View on GitHub
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M7 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <a href="#" class="footer-logo">
+      <div class="footer-logo-mark">🪶</div>
+      <span class="footer-logo-text">Enlightingale</span>
+    </a>
+    <small>Built with curiosity. Open source.</small>
+  </footer>
+
+</body>
+</html>
