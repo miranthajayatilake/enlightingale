@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { useTourStore } from '@/features/canvas/tourStore'
 
 export type VoiceStatus =
   | 'idle'
@@ -15,12 +16,14 @@ export interface TranscriptEntry {
   text: string
 }
 
+export type VoiceMode = 'tour' | 'chat'
+
 export interface VoiceSession {
   status: VoiceStatus
   transcript: TranscriptEntry[]
   isMuted: boolean
   error: string | null
-  start: () => Promise<void>
+  start: (mode?: VoiceMode, startSectionId?: string) => Promise<void>
   end: () => void
   toggleMute: () => void
 }
@@ -182,10 +185,21 @@ export function useVoiceSession(museId: string): VoiceSession {
   }, [beginTurn])
 
   const handleMessage = useCallback(
-    (msg: { type: string; value?: string; role?: string; text?: string; data?: string; message?: string }) => {
+    (msg: { type: string; value?: string; role?: string; text?: string; data?: string; message?: string; id?: string }) => {
       switch (msg.type) {
         case 'ready':
           setStatus('listening')
+          break
+
+        case 'canvas_section':
+          // Backend tells us which Canvas section the Mentor is now narrating.
+          if (msg.id) useTourStore.getState().setActiveSection(msg.id)
+          break
+
+        case 'tour_state':
+          if (msg.value === 'touring' || msg.value === 'detour' || msg.value === 'complete') {
+            useTourStore.getState().setTourPhase(msg.value)
+          }
           break
 
         case 'state':
@@ -257,10 +271,11 @@ export function useVoiceSession(museId: string): VoiceSession {
       sessionIdRef.current = null
     }
     cleanup()
+    useTourStore.getState().reset()
     setStatus('ended')
   }, [cleanup, museId])
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (mode: VoiceMode = 'tour', startSectionId?: string) => {
     // Tear down any existing session before creating a new one.
     // The generation counter ensures stale async callbacks (mic, ws events) are ignored.
     cleanup()
@@ -269,6 +284,7 @@ export function useVoiceSession(museId: string): VoiceSession {
     setStatus('connecting')
     setError(null)
     setTranscript([])
+    useTourStore.getState().reset()
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
@@ -280,7 +296,7 @@ export function useVoiceSession(museId: string): VoiceSession {
 
       const { session_id } = await api.post<{ session_id: string; ws_url: string }>(
         `/muses/${museId}/voice/session`,
-        {}
+        { mode, start_section_id: startSectionId }
       )
       if (generation !== generationRef.current) return
       sessionIdRef.current = session_id
@@ -339,6 +355,23 @@ export function useVoiceSession(museId: string): VoiceSession {
   }, [museId, handleMessage, cleanup, flushReadyTranscript, resetTurn])
 
   useEffect(() => () => { cleanup() }, [cleanup])
+
+  // Consume click-to-jump requests from the Canvas. If a session is live, jump within it
+  // (stop current audio, then ask the backend to narrate that section); otherwise start a
+  // fresh tour positioned at the clicked section.
+  const pendingJump = useTourStore((s) => s.pendingJump)
+  useEffect(() => {
+    if (!pendingJump) return
+    const { id } = pendingJump
+    useTourStore.getState().clearJump()
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      stopAllAudio()
+      ws.send(JSON.stringify({ type: 'jump_section', id }))
+    } else {
+      void start('tour', id)
+    }
+  }, [pendingJump, start, stopAllAudio])
 
   const toggleMute = useCallback(() => setIsMuted((m) => !m), [])
 

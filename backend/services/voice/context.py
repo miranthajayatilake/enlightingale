@@ -1,5 +1,6 @@
 from sqlmodel import Session, select
 
+from models.canvas import MuseCanvas
 from models.database import engine
 from models.knowledge import KnowledgeLayer
 from models.lesson import Lesson
@@ -10,6 +11,60 @@ _LEVEL_NOTE = {
     "some":      "Your student knows the basics. Build on that foundation, go deeper, and connect ideas they may not have linked before.",
     "familiar":  "Your student already has solid knowledge. Focus on nuance, depth, edge cases, and synthesis — things that deepen expert-level understanding.",
 }
+
+
+def load_canvas_sections(muse_id: str) -> list[dict]:
+    """Return the Muse's Canvas sections ordered, or [] if no ready Canvas exists."""
+    with Session(engine) as db:
+        canvas = db.get(MuseCanvas, muse_id)
+        if not canvas or canvas.status != "ready" or not canvas.sections:
+            return []
+        return sorted(canvas.sections, key=lambda s: s.get("order", 0))
+
+
+def build_tour_system_prompt(muse_id: str, sections: list[dict]) -> str:
+    """System prompt for a Guided Tour: the Mentor narrates the on-screen Canvas
+    section by section. The backend hands it one section at a time (see TourController);
+    this prompt sets the framing and gives the full ordered list as context."""
+    with Session(engine) as db:
+        muse = db.get(Muse, muse_id)
+
+    muse_name = muse.name if muse else "this topic"
+    knowledge_level = (muse.knowledge_level if muse else None) or "beginner"
+    level_note = _LEVEL_NOTE.get(knowledge_level, _LEVEL_NOTE["beginner"])
+
+    section_lines = []
+    for i, s in enumerate(sections):
+        title = s.get("title", f"Section {i + 1}")
+        narration = (s.get("narration") or "").strip()
+        section_lines.append(f"{i + 1}. {title}\n   {narration}")
+    section_block = "\n\n".join(section_lines)
+
+    parts = [
+        f'You are Mentor, an expert voice teacher giving a guided tour of an on-screen visual presentation about "{muse_name}".',
+        "",
+        f"Student level: {level_note}",
+        "",
+        "═══ HOW THE GUIDED TOUR WORKS ═══",
+        "",
+        "There is a visual presentation on the student's screen, made of sections. I (the system) will hand you ONE section at a time and tell you to present it.",
+        "Your job each turn: present the section I just handed you, in your own warm, flowing words. Expand on it, make it vivid with examples and analogies — but STAY ON THAT SECTION. Do NOT jump ahead to later sections; I will bring you there.",
+        "When I hand you the next section, open with a brief, natural bridge from what you just covered, then dive in.",
+        "",
+        "CORE RULES:",
+        "1. Speak in natural, flowing paragraphs — 3 to 6 sentences per section. Never one-liners.",
+        "2. Never use bullet points, numbered lists, markdown, or any formatting — you are speaking aloud.",
+        "3. Never ask the student what they want to learn or whether to continue. Just teach, section by section.",
+        "4. If the student asks a question, answer it fully and warmly, then I will guide you back to the tour.",
+        "5. Be authoritative, warm, and a little infectious in your enthusiasm — the best podcast host on this subject.",
+        "",
+        "For context, here is the full presentation you will walk through, in order (do not read this list aloud — I will hand you each section when it's time):",
+        "",
+        section_block,
+        "",
+        "Wait for me to hand you the first section. When I do, greet the student in one warm sentence that names the topic, then present that first section.",
+    ]
+    return "\n".join(parts)
 
 
 def build_system_prompt(muse_id: str) -> str:

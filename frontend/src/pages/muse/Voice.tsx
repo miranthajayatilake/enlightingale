@@ -30,7 +30,7 @@ export function Voice() {
             <span className="font-medium text-ink">{muse.name}</span>. Powered by Gemini 2.0 Flash Live.
           </p>
         </div>
-        <Button onClick={start}>Start Voice Session</Button>
+        <Button onClick={() => start()}>Start Voice Session</Button>
         <p className="text-xs text-ink-muted">Microphone access required</p>
       </div>
     )
@@ -52,7 +52,7 @@ export function Voice() {
           )}
         </div>
         <div className="flex gap-3">
-          <Button onClick={start}>Start New Session</Button>
+          <Button onClick={() => start()}>Start New Session</Button>
           <Button variant="secondary" onClick={() => navigate(`/muse/${muse.id}/lessons`)}>
             Go to Lessons
           </Button>
@@ -72,7 +72,7 @@ export function Voice() {
           <p className="font-semibold text-ink">Connection failed</p>
           <p className="text-sm text-error mt-1 max-w-xs">{error}</p>
         </div>
-        <Button onClick={start}>Try Again</Button>
+        <Button onClick={() => start()}>Try Again</Button>
       </div>
     )
   }

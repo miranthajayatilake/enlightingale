@@ -20,7 +20,8 @@ from sqlmodel import Session
 from core.config import settings
 from models.database import get_session
 from models.muse import Muse
-from services.voice.context import build_system_prompt
+from services.voice.context import build_system_prompt, build_tour_system_prompt, load_canvas_sections
+from services.voice.tour import TourController
 
 router     = APIRouter(prefix="/muses/{muse_id}/voice", tags=["voice"])
 router_ws  = APIRouter(tags=["voice-ws"])
@@ -39,6 +40,11 @@ def _purge_stale_sessions() -> None:
 
 # ── REST ─────────────────────────────────────────────────────────────────────
 
+class SessionCreate(BaseModel):
+    mode: str = "tour"        # tour | chat
+    start_section_id: Optional[str] = None   # tour: begin at this Canvas section
+
+
 class SessionResponse(BaseModel):
     session_id: str
     ws_url: str
@@ -47,6 +53,7 @@ class SessionResponse(BaseModel):
 @router.post("/session", response_model=SessionResponse)
 def create_voice_session(
     muse_id: str,
+    body: SessionCreate = SessionCreate(),
     session: Session = Depends(get_session),
 ):
     muse = session.get(Muse, muse_id)
@@ -55,7 +62,12 @@ def create_voice_session(
 
     _purge_stale_sessions()
     session_id = str(uuid.uuid4())
-    _sessions[session_id] = {"muse_id": muse_id, "created_at": time.time()}
+    _sessions[session_id] = {
+        "muse_id": muse_id,
+        "created_at": time.time(),
+        "mode": body.mode,
+        "start_section_id": body.start_section_id,
+    }
     return SessionResponse(
         session_id=session_id,
         ws_url=f"/ws/voice/{session_id}",
@@ -85,7 +97,14 @@ async def voice_proxy(websocket: WebSocket, session_id: str) -> None:
         return
 
     muse_id = session_data["muse_id"]
-    system_prompt = build_system_prompt(muse_id)
+    mode = session_data.get("mode", "tour")
+
+    # Tour mode requires a ready Canvas with sections; otherwise fall back to free chat.
+    tour_sections = load_canvas_sections(muse_id) if mode == "tour" else []
+    is_tour = bool(tour_sections)
+    system_prompt = (
+        build_tour_system_prompt(muse_id, tour_sections) if is_tour else build_system_prompt(muse_id)
+    )
 
     try:
         from google import genai
@@ -116,18 +135,26 @@ async def voice_proxy(websocket: WebSocket, session_id: str) -> None:
             # Notify the frontend that Gemini is ready
             await websocket.send_json({"type": "ready"})
 
-            # Kick off the greeting — send an empty turn so Gemini speaks first
             from google.genai import types as gtypes
-            await gemini_session.send_client_content(
-                turns=gtypes.Content(role="user", parts=[gtypes.Part(text="")]),
-                turn_complete=True,
-            )
+
+            tour: Optional[TourController] = None
+            if is_tour:
+                # Guided Tour: dispatch the first section; the controller advances through
+                # the rest as each section's turn completes (see _recv_loop).
+                tour = TourController(websocket, gemini_session, tour_sections)
+                await tour.begin(start_section_id=session_data.get("start_section_id"))
+            else:
+                # Free chat: send an empty turn so Gemini greets first.
+                await gemini_session.send_client_content(
+                    turns=gtypes.Content(role="user", parts=[gtypes.Part(text="")]),
+                    turn_complete=True,
+                )
 
             send_task = asyncio.create_task(
-                _send_loop(websocket, gemini_session)
+                _send_loop(websocket, gemini_session, tour)
             )
             recv_task = asyncio.create_task(
-                _recv_loop(websocket, gemini_session)
+                _recv_loop(websocket, gemini_session, tour)
             )
 
             _done, pending = await asyncio.wait(
@@ -150,8 +177,8 @@ async def voice_proxy(websocket: WebSocket, session_id: str) -> None:
             await websocket.close()
 
 
-async def _send_loop(websocket: WebSocket, gemini_session) -> None:
-    """Read audio chunks from the browser and forward them to Gemini."""
+async def _send_loop(websocket: WebSocket, gemini_session, tour: "Optional[TourController]" = None) -> None:
+    """Read messages from the browser and forward them to Gemini (audio + tour controls)."""
     from google.genai import types as gtypes
 
     async for raw in websocket.iter_text():
@@ -170,15 +197,21 @@ async def _send_loop(websocket: WebSocket, gemini_session) -> None:
                     mime_type="audio/pcm;rate=16000",
                 )
             )
+        elif msg_type == "jump_section":
+            if tour and msg.get("id"):
+                await tour.jump_to(msg["id"])
         elif msg_type == "end":
             return
 
 
-async def _recv_loop(websocket: WebSocket, gemini_session) -> None:
+async def _recv_loop(websocket: WebSocket, gemini_session, tour: "Optional[TourController]" = None) -> None:
     """Read responses from Gemini and forward them to the browser.
 
     receive() yields until one turn_complete, then stops — so we loop over
     turns ourselves to keep the session alive across multiple exchanges.
+
+    In tour mode, advance the tour cursor when a backend-dispatched section turn
+    completes (the TourController guards against advancing on a user-driven turn).
     """
     is_speaking = False
 
@@ -220,6 +253,8 @@ async def _recv_loop(websocket: WebSocket, gemini_session) -> None:
 
             # Send audio
             if audio_data:
+                if tour:
+                    tour.note_model_audio()
                 if not is_speaking:
                     is_speaking = True
                     await websocket.send_json({"type": "state", "value": "speaking"})
@@ -238,6 +273,8 @@ async def _recv_loop(websocket: WebSocket, gemini_session) -> None:
 
             # Send user transcript
             if user_transcript:
+                if tour:
+                    tour.note_user_input()
                 await websocket.send_json({
                     "type": "transcript",
                     "role": "user",
@@ -246,9 +283,13 @@ async def _recv_loop(websocket: WebSocket, gemini_session) -> None:
 
             if interrupted:
                 is_speaking = False
+                if tour:
+                    await tour.on_interrupted()
                 await websocket.send_json({"type": "interrupted"})
                 await websocket.send_json({"type": "state", "value": "listening"})
 
             if turn_complete:
                 is_speaking = False
                 await websocket.send_json({"type": "state", "value": "listening"})
+                if tour:
+                    await tour.on_turn_complete()

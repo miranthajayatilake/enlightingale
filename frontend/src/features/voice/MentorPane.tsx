@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useVoiceSession, type VoiceStatus } from '@/features/voice/useVoiceSession'
+import { useTourStore, type TourPhase } from '@/features/canvas/tourStore'
 import type { Muse } from '@/lib/api'
 import { Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
@@ -11,7 +13,16 @@ interface Props {
 export function MentorPane({ muse }: Props) {
   const [expanded, setExpanded] = useState(false)
   const { status, transcript, isMuted, error, start, end, toggleMute } = useVoiceSession(muse.id)
+  const tourPhase = useTourStore((s) => s.tourPhase)
+  const hasModelSpoken = transcript.some((t) => t.role === 'model' && t.text.trim().length > 0)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
+
+  // The Guided Tour highlights the on-screen Canvas, so make sure the Overview is showing.
+  const startTour = () => {
+    navigate(`/muse/${muse.id}`)
+    start('tour')
+  }
 
   const isActive = status === 'listening' || status === 'speaking' || status === 'processing'
 
@@ -83,17 +94,23 @@ export function MentorPane({ muse }: Props) {
           <div>
             <p className="font-semibold text-ink text-sm">Your Mentor is ready</p>
             <p className="text-xs text-ink-secondary mt-1.5 leading-relaxed max-w-[230px]">
-              Mentor will walk you through {museName} step by step — explaining, connecting ideas, and making it stick.
+              Mentor will walk you through {museName} on the page — narrating each section, connecting ideas, and making it stick.
               Jump in anytime to ask a question.
             </p>
           </div>
           <button
-            onClick={start}
+            onClick={startTour}
             className="w-full py-2.5 px-4 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover transition-colors"
           >
-            Teach me about {museName}
+            Walk me through {museName}
           </button>
-          <p className="text-xs text-ink-muted -mt-2">Microphone access required</p>
+          <button
+            onClick={() => start('chat')}
+            className="text-xs text-ink-secondary hover:text-accent transition-colors -mt-2"
+          >
+            or just chat
+          </button>
+          <p className="text-xs text-ink-muted -mt-1">Microphone access required</p>
         </div>
       )}
 
@@ -111,7 +128,7 @@ export function MentorPane({ muse }: Props) {
           {/* Orb + status */}
           <div className="shrink-0 flex flex-col items-center gap-2 py-5">
             <CompactOrb status={status} />
-            <p className="text-xs font-medium text-ink-secondary">{activeLabel(status)}</p>
+            <p className="text-xs font-medium text-ink-secondary">{activeLabel(status, tourPhase, hasModelSpoken)}</p>
           </div>
 
           {/* Transcript */}
@@ -185,7 +202,7 @@ export function MentorPane({ muse }: Props) {
               )}
             </div>
             <button
-              onClick={start}
+              onClick={startTour}
               className="w-full py-2 px-4 bg-accent text-white text-xs font-medium rounded-lg hover:bg-accent-hover transition-colors"
             >
               Continue learning
@@ -220,7 +237,7 @@ export function MentorPane({ muse }: Props) {
           <p className="text-2xl">⚠️</p>
           <p className="text-xs text-error leading-relaxed max-w-[220px]">{error}</p>
           <button
-            onClick={start}
+            onClick={startTour}
             className="py-2 px-5 bg-accent text-white text-xs font-medium rounded-lg hover:bg-accent-hover transition-colors"
           >
             Try again
@@ -268,9 +285,17 @@ function CompactOrb({ status }: { status: VoiceStatus }) {
   )
 }
 
-function activeLabel(status: VoiceStatus): string {
+function activeLabel(status: VoiceStatus, tourPhase: TourPhase, hasModelSpoken: boolean): string {
   if (status === 'speaking') return 'Mentor is explaining…'
-  if (status === 'listening') return 'Listening — ask anything or just wait'
   if (status === 'processing') return 'Thinking…'
+  if (status === 'listening') {
+    // During a tour, Gemini takes a few seconds to start each section — don't show the
+    // "your turn" label in that gap (it's misleading; the Mentor is about to speak).
+    if (tourPhase === 'touring') {
+      return hasModelSpoken ? 'Mentor is moving on…' : 'Mentor is preparing your walkthrough…'
+    }
+    if (tourPhase === 'detour') return 'Listening — ask your question'
+    return 'Listening — ask anything or just wait'
+  }
   return ''
 }
