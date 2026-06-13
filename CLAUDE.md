@@ -12,6 +12,8 @@ This file is the complete reference for working on this codebase. Read it before
 
 The product is in active Phase 1 development. The full PRD is at `project-management/PRD-Enlightingale.md`. The Phase 1 development plan is at `docs/plans/phase-1-development-plan.md`.
 
+**Release status:** Phase 1 (Milestones 1.1–1.8) shipped as **v0.1**. The codebase is a git repo with `main` tracking the private GitHub remote `origin` (`github.com/miranthajayatilake/enlightingale`); the `v0.1` release is an annotated tag. `.env` and `data/` are gitignored — never commit them.
+
 ---
 
 ## Naming Conventions — Non-Negotiable
@@ -396,8 +398,9 @@ WS     /ws/voice/{session_id}            ← Gemini Live proxy
 - Knowledge Layer: summarizer, concept extractor, glossary, synthesis; auto-triggers Lesson generation on completion
 - Lesson Flow: curriculum planner, lesson writer, quiz generator, LessonReader (serif mode)
 - Chat Assistant: RAG retrieval, Claude SSE streaming, citations, stream error recovery in UI
-- Voice Agent (Mentor): Gemini Live proxy (`/ws/voice/{session_id}`), `useVoiceSession` hook, 5 s audio backpressure cap
+- Voice Agent (Mentor): Gemini Live proxy (`/ws/voice/{session_id}`), `useVoiceSession` hook
 - **Mentor Pane** UX: Voice Agent moved from its own tab to a persistent collapsible right-side panel on all Muse pages; CTA "Teach me about {Muse}"; enhanced teaching persona in `backend/services/voice/context.py`
+- Mentor audio/transcript polish: stale-session protection (generation counter), no overlapping voices, backend audio dedup, and per-turn proportional transcript reveal paced to the audio playback clock (see Voice Agent conventions)
 
 ### Complete — Milestone 1.8 (Integration + Polish)
 Audit run 2026-06-13 (`docs/plans/audit-2026-06-13.md`) — 64 findings, all resolved:
@@ -438,8 +441,12 @@ Audit run 2026-06-13 (`docs/plans/audit-2026-06-13.md`) — 64 findings, all res
 
 ### Voice Agent (Module 8)
 - The backend opens the Gemini Live WebSocket; the frontend connects to a **backend proxy** at `/ws/voice/{session_id}`. The Gemini API key never touches the browser.
-- Audio format: PCM 16kHz from browser → Gemini; PCM 24kHz from Gemini → browser.
-- Barge-in is handled by Gemini natively; the frontend just stops audio playback when it detects a `USER_TURN` message.
+- Audio format: PCM 16kHz from browser → Gemini; PCM 24kHz from Gemini → browser. The frontend mic worklet is `frontend/public/pcm-processor.js`.
+- Proxy message protocol (`backend/api/voice.py` ↔ `useVoiceSession.ts`): `ready`, `state` (`speaking`/`listening`/`processing`), `audio_chunk` (base64 PCM), `transcript` (`role` + `text`), `interrupted`, `error`.
+- **Barge-in**: Gemini detects it natively and the backend emits `interrupted`; the frontend then calls `stopAllAudio()` (stops all scheduled buffer sources, resets the play head, drops un-revealed transcript).
+- **Audio dedup (backend `_recv_loop`)**: read audio from `server_content.model_turn` first and use the `response.data` shorthand only as a fallback when no audio was found — some SDK versions expose the same bytes on both paths, which would otherwise double-play.
+- **Stale-session protection (`useVoiceSession`)**: `start()` calls `cleanup()` first and bumps a `generationRef`; every WebSocket/mic callback is stamped with its generation and ignored if a newer session has started. This prevents a previous session's events from playing into a new `AudioContext` (the overlapping-voices bug).
+- **Transcript pacing — proportional reveal tied to the audio clock**: audio from Gemini streams *faster than real time*, so the play queue (`nextPlayRef`) runs far ahead of `AudioContext.currentTime`. Do NOT show transcript on arrival (races ahead) and do NOT tag it against the queue tail (drifts once the buffer deepens). Instead, per model *turn*: anchor `turnStartTime` to the first audio chunk's play time, accumulate the turn's text in `turnTextRef`, and an 80 ms flush loop reveals the prefix whose length matches the fraction of the turn's audio already played (`(currentTime − turnStartTime + LEAD) / (nextPlayRef − turnStartTime)`), with a ~0.3 s lead so text leads the voice slightly. Turn lifecycle: `state:speaking` (or first audio, as fallback) → `beginTurn()`; text arriving before the first audio also opens the turn so it can't be wiped; `state:listening` closes the turn but reveal keeps draining the still-playing buffer.
 
 ---
 
@@ -465,6 +472,8 @@ Audit run 2026-06-13 (`docs/plans/audit-2026-06-13.md`) — 64 findings, all res
 
 10. **Mentor system prompt injects the full lesson plan + knowledge layer synthesis.** The Voice Agent reads `backend/services/voice/context.py:build_system_prompt()` on session start. This means Mentor knows exactly what topics exist and in what order, so it delivers a structured lecture rather than free-form chat. The Gemini model does not need RAG calls — the context fits in the system prompt.
 
+11. **Mentor transcript is paced to the voice, not to message arrival.** Gemini streams audio faster than real time, so revealing transcript as it arrives makes the text race far ahead of what you hear. The transcript is gated on the actual audio playback clock via per-turn proportional reveal (see Voice Agent conventions). Don't "simplify" this back to showing text on arrival — that's the bug it fixes. The voice plays at its natural pace; the text follows it.
+
 ---
 
 ## Common Gotchas
@@ -476,3 +485,5 @@ Audit run 2026-06-13 (`docs/plans/audit-2026-06-13.md`) — 64 findings, all res
 - **ChromaDB embeddings**: The `SentenceTransformer` model is lazy-loaded on first call (takes ~10 seconds on cold start). This is intentional — it avoids blocking startup.
 - **Tailwind v4 custom utilities**: Use the `@utility` directive (not `@layer utilities`) to add custom utility classes that work with Tailwind's variant system. Example: `@utility scrollbar-none { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }` — defined at the bottom of `index.css`.
 - **Audit process**: Before starting a new milestone, run a code audit using the template at `docs/plans/audit-template-and-process.md`. Fix P0 → P1 → P2 → P3 in order. Log findings in a dated file like `docs/plans/audit-YYYY-MM-DD.md`.
+- **Gemini audio streams faster than real time**: by the time a turn is a couple seconds in, its *entire* response may already be buffered. Anything that should track the spoken pace (transcript reveal, captions, progress) must be gated on `AudioContext.currentTime`/the play queue, never on message-arrival time or `setTimeout` (wall clock). See `useVoiceSession.ts` transcript pacing.
+- **Git identity**: commits use the global identity `mirantha <mj.jayathilaka@gmail.com>` (the email tied to the GitHub account). `gh` is the auth/credential helper. Push access is the `miranthajayatilake` account; don't confuse the gh login with the commit author email.
