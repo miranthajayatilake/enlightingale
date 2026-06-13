@@ -31,6 +31,10 @@ These are the product's canonical terms. Use them exactly everywhere: in code, c
 | **Mentor** | The Voice Agent's in-app persona — warm, methodical teacher | Assistant, Bot, Guide |
 | **Mentor Pane** | Persistent collapsible right-side panel housing the Mentor on all Muse pages | Voice Tab, Voice Panel, Sidebar |
 | **Visual Explorer** | Interactive knowledge graph (Phase 2 — not yet built) | Knowledge Graph |
+| **Canvas** | The Overview tab's auto-generated visual presentation of a Muse's Knowledge Layer — an ordered sequence of typed sections | Dashboard, Deck, Slides, Report, Landing Page |
+| **Canvas Section** | One typed block in the Canvas (hero, concept cluster, timeline, comparison, takeaways, …); has visual content **and** a `narration` script | Slide, Card, Widget, Block |
+| **Guided Tour** | A Mentor voice session that narrates the Canvas section by section, highlighting as it goes | Walkthrough, Presentation mode |
+| **Detour** | A user-initiated Q&A excursion mid-tour, after which the Mentor re-anchors and resumes | Interruption |
 
 ---
 
@@ -164,7 +168,7 @@ enlightingale/
 │   │       ├── Home.tsx             ← Muse grid + empty state
 │   │       ├── NewMuse.tsx          ← 3-step Muse creation wizard
 │   │       └── muse/
-│   │           ├── MuseLayout.tsx   ← 4-tab nav (Overview/Resources/Lessons/Chat) + MentorPane
+│   │           ├── MuseLayout.tsx   ← 3-tab nav (Overview/Resources/Chat) + MentorPane (Lessons deprecated in v0.2)
 │   │           ├── Overview.tsx     ← agent status + stats
 │   │           ├── Resources.tsx    ← resource list + AddResourceModal
 │   │           ├── Lessons.tsx      ← lesson list with progress rings; idle/building/failed states
@@ -250,7 +254,7 @@ enlightingale/
 
 ### MentorPane
 
-`frontend/src/features/voice/MentorPane.tsx` is rendered inside `MuseLayout` alongside the `<Outlet>`. It is a 320 px wide right-hand panel when expanded and a 48 px collapsed strip when closed. States: `idle → connecting → listening/speaking/processing → ended | error`. Auto-expands when a session becomes active; auto-scrolls transcript. CTA copy: **"Teach me about {museName}"**. Uses the existing `useVoiceSession` hook without modification.
+`frontend/src/features/voice/MentorPane.tsx` is rendered inside `MuseLayout` alongside the `<Outlet>`. It is a 320 px wide right-hand panel when expanded and a 48 px collapsed strip when closed. States: `idle → connecting → listening/speaking/processing → ended | error`. Auto-expands when a session becomes active; auto-scrolls transcript. Primary CTA: **"Walk me through {museName}"** (starts a Guided Tour and navigates to the Overview); secondary **"or just chat"** for free-form Q&A. Uses the `useVoiceSession` hook, which also drives the Canvas tour via the shared `tourStore`.
 
 ---
 
@@ -409,6 +413,12 @@ Audit run 2026-06-13 (`docs/plans/audit-2026-06-13.md`) — 64 findings, all res
 - **P2**: logging in rag.py + searcher.py; stale voice session purge; ResourceReviewList loading state; Lessons idle/building/failed states; ReactMarkdown code block styling; Modal backdrop option; audio backpressure cap; `scrollbar-none` @utility
 - **P3**: HTTPException keyword args; Input focus/aria; Badge overflow; aria-labels on mic/mute/end; Lessons progress ring polish; AddResourceModal Cancel buttons
 
+### Shipped — v0.2 (Overview Canvas + Mentor Guided Tour) — M0.2.1–M0.2.4
+PRD: `docs/plans/v0.2/PRD-v0.2-overview-canvas.md`. Built and working; M0.2.5 (polish + a generation-exercising audit pass) is the remaining milestone.
+- **Canvas** (`MuseCanvas` model, `services/canvas/`, `job_type: canvas`, `GET/POST /api/muses/{id}/canvas`): the Overview tab is now an auto-generated, sectioned visual presentation of the Knowledge Layer (9 block types: hero/prose/key_concepts/timeline/comparison/stat_band/resource_spotlight/gaps/takeaways). Auto-builds when the Knowledge Layer completes; staleness tracked via `source_signature`. Frontend in `features/canvas/`; Overview is a 4-state router (Setup / Building / Ready / Failed).
+- **Mentor Guided Tour**: the Mentor narrates the Canvas section by section, emitting backend-orchestrated `canvas_section`/`tour_state` events (deterministic highlight, never inferred from transcript). Detour on barge-in (interrupt → answer → re-anchor → resume) and click-to-jump. **Jump/interrupt uses `send_realtime_input` to cut off the current turn** — `send_client_content` does NOT interrupt an in-progress turn (see `services/voice/tour.py`).
+- **Lessons deprecated**: removed from the tab nav; `/lessons` routes redirect to Overview. Backend lesson code and pages remain on disk, unused.
+
 ### Next — Phase 2
 - Auth (single-user login)
 - Visual Explorer (knowledge graph)
@@ -468,9 +478,9 @@ Audit run 2026-06-13 (`docs/plans/audit-2026-06-13.md`) — 64 findings, all res
 
 8. **No auth in Phase 1.** Single user, local or private AWS deployment. Auth is Phase 2.
 
-9. **Voice Agent is the Mentor Pane — persistent on all Muse pages, not a tab.** The Voice Agent is the primary learning surface. Making it a dedicated tab created friction and hid it. The Mentor Pane is always accessible via the collapsed strip on the right edge; it expands to 320 px when the user starts or resumes a session. The CTA language is "Teach me about {Muse}" — not "Talk to voice agent." There is no `/voice` page; that route redirects to the Muse overview.
+9. **Voice Agent is the Mentor Pane — persistent on all Muse pages, not a tab.** The Voice Agent is the primary learning surface. Making it a dedicated tab created friction and hid it. The Mentor Pane is always accessible via the collapsed strip on the right edge; it expands to 320 px when the user starts or resumes a session. As of v0.2 the primary CTA is "Walk me through {Muse}" (Guided Tour), with "or just chat" secondary — not "Talk to voice agent." There is no `/voice` page; that route redirects to the Muse overview.
 
-10. **Mentor system prompt injects the full lesson plan + knowledge layer synthesis.** The Voice Agent reads `backend/services/voice/context.py:build_system_prompt()` on session start. This means Mentor knows exactly what topics exist and in what order, so it delivers a structured lecture rather than free-form chat. The Gemini model does not need RAG calls — the context fits in the system prompt.
+10. **Mentor's teaching spine is the Canvas, dispatched one section at a time (v0.2).** In a Guided Tour, `backend/services/voice/context.py:build_tour_system_prompt()` frames the session and the `TourController` (`services/voice/tour.py`) hands Gemini one Canvas section per turn, emitting the `canvas_section` highlight in lockstep — so the on-screen highlight is deterministic, never inferred from the audio/transcript. The Gemini model needs no RAG calls; each section's `narration` is sent as the turn to speak. Free "Just chat" mode still uses `build_system_prompt()` (lesson plan + knowledge-layer synthesis injected once). See PRD §7.
 
 11. **Mentor transcript is paced to the voice, not to message arrival.** Gemini streams audio faster than real time, so revealing transcript as it arrives makes the text race far ahead of what you hear. The transcript is gated on the actual audio playback clock via per-turn proportional reveal (see Voice Agent conventions). Don't "simplify" this back to showing text on arrival — that's the bug it fixes. The voice plays at its natural pace; the text follows it.
 
