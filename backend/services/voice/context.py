@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from sqlmodel import Session, select
 
 from models.canvas import MuseCanvas
@@ -5,6 +7,7 @@ from models.database import engine
 from models.knowledge import KnowledgeLayer
 from models.lesson import Lesson
 from models.muse import Muse
+from models.resource import Resource
 
 _LEVEL_NOTE = {
     "beginner":  "Your student is brand-new to this topic. Start from absolute first principles. Use plain language and everyday analogies. Avoid jargon unless you explain it immediately.",
@@ -20,6 +23,63 @@ def load_canvas_sections(muse_id: str) -> list[dict]:
         if not canvas or canvas.status != "ready" or not canvas.sections:
             return []
         return sorted(canvas.sections, key=lambda s: s.get("order", 0))
+
+
+def build_tour_intro_text(muse_id: str, sections: list[dict]) -> str:
+    """Build the user-turn text for the Mentor's opening orientation.
+    Sent as the first Gemini turn before any Canvas section is dispatched."""
+    with Session(engine) as db:
+        muse = db.get(Muse, muse_id)
+        resources = db.exec(
+            select(Resource).where(
+                Resource.muse_id == muse_id,
+                Resource.approved == True,  # noqa: E712
+                Resource.status == "ready",
+            )
+        ).all()
+
+    intent = ""
+    if muse:
+        intent = muse.research_focus or muse.description or muse.name or ""
+
+    source_lines = []
+    for r in resources[:15]:
+        domain = ""
+        if r.source_url:
+            try:
+                domain = urlparse(r.source_url).netloc
+            except Exception:
+                pass
+        label = f'"{r.title}"'
+        if domain:
+            label += f" ({domain})"
+        elif r.source_type == "pdf":
+            label += " (PDF)"
+        elif r.source_type == "text":
+            label += " (note)"
+        source_lines.append(f"- {label}")
+
+    sources_block = "\n".join(source_lines) if source_lines else "- No sources gathered yet"
+    n_sources = len(resources)
+
+    agenda_lines = [
+        f"{i + 1}. {s.get('title', f'Section {i + 1}')}"
+        for i, s in enumerate(sections)
+    ]
+    agenda_block = "\n".join(agenda_lines)
+
+    return (
+        "Deliver a warm, spoken orientation before the guided tour begins. "
+        "Do NOT read lists aloud — weave all of this into natural, flowing, enthusiastic speech. "
+        "Cover these three things:\n\n"
+        f"1. The student wanted to learn about: {intent}\n\n"
+        f"2. What was gathered — {n_sources} source{'s' if n_sources != 1 else ''} researched:\n{sources_block}\n\n"
+        f"3. The tour agenda — what we'll cover in order:\n{agenda_block}\n\n"
+        "Aim for about 30 to 45 seconds of spoken time. "
+        "Make the student feel like you have done thorough research for them and are genuinely excited to walk them through it. "
+        "End naturally — something like 'Let's get into it' or 'Let's dive in.' — "
+        "then stop. I will hand you the first section."
+    )
 
 
 def build_tour_system_prompt(muse_id: str, sections: list[dict]) -> str:
@@ -62,7 +122,9 @@ def build_tour_system_prompt(muse_id: str, sections: list[dict]) -> str:
         "",
         section_block,
         "",
-        "Wait for me to hand you the first section. When I do, greet the student in one warm sentence that names the topic, then present that first section.",
+        "I will first send you an orientation turn with the student's learning goal, the sources gathered, and a preview of the sections ahead. "
+        "Deliver that as a warm spoken opening — not as a list read aloud, but woven into natural, flowing sentences. "
+        "When the orientation is done, I will hand you the sections one at a time. Transition naturally into each one.",
     ]
     return "\n".join(parts)
 

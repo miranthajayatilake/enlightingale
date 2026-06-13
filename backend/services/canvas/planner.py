@@ -42,19 +42,18 @@ async def plan_canvas(
     )
     outline = _parse_json(response.content[0].text).get("sections", [])
 
-    # Keep only known types with the fields we need.
-    cleaned = [
+    # Keep only known types with the required fields.
+    valid = [
         s for s in outline
         if isinstance(s, dict) and s.get("type") in SECTION_SCHEMAS and s.get("title")
     ]
 
     # Guarantee the spine: hero first, takeaways last.
-    cleaned = [s for s in cleaned if s["type"] != "hero"]
-    cleaned = [s for s in cleaned if s["type"] != "takeaways"]
-    hero = next((s for s in outline if isinstance(s, dict) and s.get("type") == "hero"), None)
-    takeaways = next((s for s in outline if isinstance(s, dict) and s.get("type") == "takeaways"), None)
+    middle = [s for s in valid if s["type"] not in ("hero", "takeaways")]
+    hero = next((s for s in valid if s["type"] == "hero"), None)
+    takeaways = next((s for s in valid if s["type"] == "takeaways"), None)
 
     hero = hero or {"type": "hero", "title": muse_name, "intent": "Introduce the topic in one vivid line."}
     takeaways = takeaways or {"type": "takeaways", "title": "Takeaways", "intent": "The few things worth remembering."}
 
-    return [hero, *cleaned, takeaways]
+    return [hero, *middle, takeaways]

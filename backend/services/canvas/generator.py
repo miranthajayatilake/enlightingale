@@ -8,6 +8,7 @@ whole build. Fully wrapped in try/except with a DB failure path (the v0.1 P0 pat
 
 import json
 from datetime import datetime
+from urllib.parse import urlparse
 
 from redis.asyncio import Redis
 from sqlmodel import Session, select
@@ -186,13 +187,35 @@ async def build_canvas(muse_id: str, job_id: str, redis_conn: Redis) -> None:
             await _fail(muse_id, job_id, "Canvas planner returned no sections", redis_conn)
             return
 
+        # Pre-build a resource manifest block for data_sources sections (actual DB data,
+        # not RAG). Each line: title | type | domain-or-path
+        resource_manifest_lines = []
+        for r in resources:
+            domain = ""
+            if r.source_url:
+                try:
+                    domain = urlparse(r.source_url).netloc
+                except Exception:
+                    domain = r.source_url[:60]
+            resource_manifest_lines.append(
+                f'- title: "{r.title}" | type: {r.source_type} | domain: {domain or "n/a"}'
+            )
+        resource_manifest = "\n".join(resource_manifest_lines) or "No resources available."
+
         n = len(outline)
         sections: list[dict] = []
         order = 0
         for i, stub in enumerate(outline):
             progress = 20 + int((i / n) * 70)
             await _publish(redis_conn, job_id, progress, f"Building section {i + 1} of {n}: {stub['title']}…")
-            section = await _generate_section(stub, order, muse_name, level_note, context_block)
+            # data_sources uses the resource manifest as context — Claude writes snippets
+            # about real sources, not synthesised ones.
+            section_context = (
+                f"RESOURCES (use these exactly — do not invent sources):\n{resource_manifest}"
+                if stub.get("type") == "data_sources"
+                else context_block
+            )
+            section = await _generate_section(stub, order, muse_name, level_note, section_context)
             if section:
                 sections.append(section)
                 order += 1

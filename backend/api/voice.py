@@ -20,7 +20,7 @@ from sqlmodel import Session
 from core.config import settings
 from models.database import get_session
 from models.muse import Muse
-from services.voice.context import build_system_prompt, build_tour_system_prompt, load_canvas_sections
+from services.voice.context import build_system_prompt, build_tour_intro_text, build_tour_system_prompt, load_canvas_sections
 from services.voice.tour import TourController
 
 router     = APIRouter(prefix="/muses/{muse_id}/voice", tags=["voice"])
@@ -139,9 +139,10 @@ async def voice_proxy(websocket: WebSocket, session_id: str) -> None:
 
             tour: Optional[TourController] = None
             if is_tour:
-                # Guided Tour: dispatch the first section; the controller advances through
-                # the rest as each section's turn completes (see _recv_loop).
-                tour = TourController(websocket, gemini_session, tour_sections)
+                # Guided Tour: start with a spoken orientation (sources + intent + agenda),
+                # then the controller advances section by section as turns complete.
+                intro_text = build_tour_intro_text(muse_id, tour_sections)
+                tour = TourController(websocket, gemini_session, tour_sections, intro_text=intro_text)
                 await tour.begin(start_section_id=session_data.get("start_section_id"))
             else:
                 # Free chat: send an empty turn so Gemini greets first.

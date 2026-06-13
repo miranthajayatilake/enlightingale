@@ -37,6 +37,10 @@ SECTION_SCHEMAS: dict[str, dict] = {
         "schema": '{"items": [{"resource_id": "the id from the provided resource list", "title": "Resource title", "why": "one sentence on why it matters"}]}',
         "required": ["items"],
     },
+    "data_sources": {
+        "schema": '{"summary": "one sentence describing the breadth of sources gathered", "sources": [{"title": "Source title", "type": "url", "domain": "hostname or null", "snippet": "one sentence on what this source contributed"}]}',
+        "required": ["summary", "sources"],
+    },
     "gaps": {
         "schema": '{"items": ["A question or area worth exploring next", "Another one"]}',
         "required": ["items"],
@@ -76,20 +80,16 @@ Known knowledge gaps: {gaps_text}
 Resources available: {resources_text}
 Existing lessons: {lessons_text}
 
-Design an ordered sequence of 5 to 9 sections that takes the learner on a satisfying journey through this topic. Choose the section TYPES that best fit THIS topic — do not force types that do not fit.
+Design an ordered sequence of 5 to 9 sections that takes the learner on a satisfying journey through this topic.
 
 Allowed section types: {allowed}
 
 Rules:
-- The FIRST section must be "hero".
-- The LAST section must be "takeaways".
-- Include "key_concepts" only if key concepts are available.
-- Include "gaps" only if knowledge gaps are recorded.
-- Include "resource_spotlight" only if resources are available.
-- Include "timeline" only if the topic has a meaningful chronological dimension.
-- Include "comparison" only if there is a natural contrast between two ideas, schools, or approaches.
-- Use "prose" for narrative synthesis and "stat_band" sparingly for at-a-glance numbers.
-- Do not repeat a type more than twice.
+- The FIRST section must be type "hero". The LAST must be type "takeaways".
+- Strongly consider including "data_sources" as the second section when resources exist — it orients the learner by showing where the knowledge comes from before diving into content.
+- Do not repeat any type more than twice.
+- Choose freely based on what THIS specific topic calls for. Let the subject matter drive the structure — a historical topic might want a timeline; a comparative field might want a comparison table; a jargon-heavy domain might want key_concepts. Or none of those. Think about what a thoughtful author would choose for this exact topic and avoid mechanical completeness.
+- Every section must earn its place. Do not include a type just to fill the template.
 
 Return ONLY valid JSON:
 {{
@@ -109,6 +109,14 @@ def build_section_prompt(
 ) -> str:
     schema = SECTION_SCHEMAS[section_type]["schema"]
 
+    data_sources_note = (
+        "\nIMPORTANT: For a \"data_sources\" section, populate the \"sources\" array using ONLY "
+        "the resources listed in the source material above — do not invent or add any sources. "
+        "Copy titles verbatim. Write a genuine one-sentence snippet for each based on what the "
+        "title suggests about its contribution to the topic.\n"
+        if section_type == "data_sources" else ""
+    )
+
     return f"""You are writing one section of a visual presentation ("Canvas") teaching someone about "{muse_name}".
 
 Student level: {level_note}
@@ -116,7 +124,7 @@ Student level: {level_note}
 This section's type: {section_type}
 Heading: {title}
 What it should convey: {intent}
-
+{data_sources_note}
 Source material to draw from:
 {context_block[:6_000]}
 

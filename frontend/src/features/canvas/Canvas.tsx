@@ -146,6 +146,7 @@ function CanvasEndCTA({ muse }: { muse: Muse }) {
 function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
   const queryClient = useQueryClient()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [awaitingBuild, setAwaitingBuild] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -164,7 +165,9 @@ function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
 
   const rebuildCanvas = useMutation({
     mutationFn: () => api.post(`/muses/${muse.id}/canvas/build`, {}),
+    onMutate: () => setAwaitingBuild(true),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['canvas', muse.id] }),
+    onError: () => setAwaitingBuild(false),
   })
   const rebuildKnowledge = useMutation({
     mutationFn: () => api.post(`/muses/${muse.id}/knowledge/build`, {}),
@@ -186,7 +189,7 @@ function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
     setMenuOpen(false)
   }
 
-  const statusBanner = rebuildCanvas.isPending
+  const statusBanner = rebuildCanvas.isPending || awaitingBuild
     ? 'Rebuilding your Canvas…'
     : rebuildKnowledge.isPending
     ? 'Rebuilding Knowledge Layer…'

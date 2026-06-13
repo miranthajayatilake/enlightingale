@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type TourPhase = 'idle' | 'touring' | 'detour' | 'complete'
+export type TourPhase = 'idle' | 'intro' | 'touring' | 'detour' | 'complete'
 
 interface TourState {
   /** Canvas section the Mentor is currently narrating (drives highlight + scroll). */

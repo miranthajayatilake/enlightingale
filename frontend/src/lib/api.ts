@@ -117,6 +117,7 @@ export type CanvasSectionType =
   | 'comparison'
   | 'stat_band'
   | 'resource_spotlight'
+  | 'data_sources'
   | 'gaps'
   | 'takeaways'
 

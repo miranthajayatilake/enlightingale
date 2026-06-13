@@ -302,6 +302,7 @@ function activeLabel(status: VoiceStatus, tourPhase: TourPhase, hasModelSpoken: 
   if (status === 'listening') {
     // During a tour, Gemini takes a few seconds to start each section — don't show the
     // "your turn" label in that gap (it's misleading; the Mentor is about to speak).
+    if (tourPhase === 'intro') return 'Mentor is setting the scene…'
     if (tourPhase === 'touring') {
       return hasModelSpoken ? 'Mentor is moving on…' : 'Mentor is preparing your walkthrough…'
     }

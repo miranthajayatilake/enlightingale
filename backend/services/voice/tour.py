@@ -21,12 +21,13 @@ from google.genai import types as gtypes
 
 
 class TourController:
-    def __init__(self, websocket: WebSocket, gemini_session, sections: list[dict]):
+    def __init__(self, websocket: WebSocket, gemini_session, sections: list[dict], intro_text: Optional[str] = None):
         self.ws = websocket
         self.gs = gemini_session
         self.sections = sections
+        self.intro_text = intro_text
         self.cursor = 0
-        self.phase = "touring"              # touring | detour | complete
+        self.phase = "intro" if intro_text else "touring"   # intro | touring | detour | complete
         self.saw_user_input_this_turn = False
         self.detour_answer_started = False  # model produced audio since entering detour
         # A jump interrupts Gemini's current turn via realtime input. That self-induced
@@ -41,8 +42,13 @@ class TourController:
     async def begin(self, start_section_id: Optional[str] = None) -> None:
         start = self._index_of(start_section_id) if start_section_id else 0
         self.cursor = start if start is not None else 0
-        await self._emit_section()
-        await self._dispatch(kind="first")
+        if self.intro_text:
+            # Intro plays before section 0 — no canvas highlight yet.
+            await self.ws.send_json({"type": "tour_state", "value": "intro"})
+            await self._send(self.intro_text)
+        else:
+            await self._emit_section()
+            await self._dispatch(kind="first")
 
     async def _emit_section(self) -> None:
         section = self.sections[self.cursor]
@@ -75,6 +81,11 @@ class TourController:
                 "Begin the guided tour now. Greet the student in one warm sentence that "
                 f'names the topic, then present this first section, titled "{title}". '
                 f"Cover this:\n\n{narration}"
+            )
+        elif kind == "first_after_intro":
+            text = (
+                f'The orientation is complete. Now flow naturally into the first section, titled "{title}". '
+                f"No need to re-introduce the topic — just transition smoothly and present:\n\n{narration}"
             )
         elif kind == "resume":
             text = (
@@ -123,6 +134,13 @@ class TourController:
         # Swallow the turn_complete from a turn we deliberately cut off (jump).
         if self._ignore_turn_completes > 0:
             self._ignore_turn_completes -= 1
+            return
+
+        if self.phase == "intro":
+            # Orientation finished — start the actual tour at section 0.
+            self.phase = "touring"
+            await self._emit_section()
+            await self._dispatch(kind="first_after_intro")
             return
 
         if self.phase == "detour":

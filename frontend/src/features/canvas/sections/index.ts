@@ -8,6 +8,7 @@ import { TimelineSection } from './TimelineSection'
 import { ComparisonSection } from './ComparisonSection'
 import { StatBandSection } from './StatBandSection'
 import { ResourceSpotlightSection } from './ResourceSpotlightSection'
+import { DataSourcesSection } from './DataSourcesSection'
 import { GapsSection } from './GapsSection'
 import { TakeawaysSection } from './TakeawaysSection'
 
@@ -19,6 +20,7 @@ const REGISTRY: Record<CanvasSectionType, FC<SectionProps>> = {
   comparison: ComparisonSection,
   stat_band: StatBandSection,
   resource_spotlight: ResourceSpotlightSection,
+  data_sources: DataSourcesSection,
   gaps: GapsSection,
   takeaways: TakeawaysSection,
 }

@@ -197,7 +197,7 @@ export function useVoiceSession(museId: string): VoiceSession {
           break
 
         case 'tour_state':
-          if (msg.value === 'touring' || msg.value === 'detour' || msg.value === 'complete') {
+          if (msg.value === 'intro' || msg.value === 'touring' || msg.value === 'detour' || msg.value === 'complete') {
             useTourStore.getState().setTourPhase(msg.value)
           }
           break

@@ -30,7 +30,9 @@ export function MuseOverview() {
       const c = q.state.data as MuseCanvas | null
       const klBuilding = kl?.status === 'building'
       const klReadyNoCanvas = kl?.status === 'ready' && (!c || (c.status !== 'ready' && c.status !== 'failed'))
-      return c?.status === 'building' || klBuilding || klReadyNoCanvas || agentRunning ? 3000 : false
+      if (c?.status === 'building' || klBuilding || klReadyNoCanvas || agentRunning) return 3000
+      if (c?.status === 'ready') return 15000  // background-poll to detect staleness after KL rebuilds
+      return false
     },
   })
 
