@@ -1,5 +1,5 @@
 import json
-from core.claude import async_client
+from services.research_agent._json import complete_json
 
 _LEVEL_NOTE = {
     "beginner":  "Reject sources that are too technical or academic without clear explanations.",
@@ -53,20 +53,8 @@ Always reject: paywalled content, Reddit/social media, forums, empty pages.
 Sources:
 {sources_json}"""
 
-    response = await async_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    text = response.content[0].text.strip()
-    # Strip markdown code fences if Claude wraps the output
-    if text.startswith("```"):
-        parts = text.split("```")
-        # parts[1] is between first and second fence
-        text = parts[1].lstrip("json").strip() if len(parts) >= 2 else text
-
-    return json.loads(text).get("evaluations", [])
+    result = await complete_json(prompt, max_tokens=4096)
+    return result.get("evaluations", []) if isinstance(result, dict) else []
 
 
 async def evaluate_sources(

@@ -1,5 +1,4 @@
-import json
-from core.claude import async_client
+from services.research_agent._json import complete_json
 
 
 def _avg_score(result: dict) -> float:
@@ -47,18 +46,5 @@ Write a short coverage report. Return ONLY valid JSON:
   "gaps": ["1-3 important aspects of the topic not well covered by these sources"]
 }}"""
 
-    response = await async_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    text = response.content[0].text.strip()
-    if text.startswith("```"):
-        text = text.split("```", 2)[1]
-        if text.startswith("json"):
-            text = text[4:]
-    text = text.strip()
-
-    report = json.loads(text)
+    report = await complete_json(prompt, max_tokens=512)
     return {"selected": selected, "report": report}

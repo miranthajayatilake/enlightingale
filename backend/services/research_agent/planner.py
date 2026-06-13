@@ -1,5 +1,4 @@
-import json
-from core.claude import async_client
+from services.research_agent._json import complete_json
 
 _LEVEL_CONTEXT = {
     "beginner":  "The learner is completely new to this. Prioritise clear, accessible sources that build intuition before diving into detail.",
@@ -38,17 +37,4 @@ Requirements:
 - Queries must be concrete and specific, not generic
 - Cover breadth (key events, concepts, figures) AND depth (causes, effects, analysis, legacy)"""
 
-    response = await async_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    text = response.content[0].text.strip()
-    if text.startswith("```"):
-        text = text.split("```", 2)[1]
-        if text.startswith("json"):
-            text = text[4:]
-    text = text.strip()
-
-    return json.loads(text)
+    return await complete_json(prompt, max_tokens=2048)
