@@ -79,6 +79,7 @@ export interface Muse {
   status: string
   agent_status: string
   resource_count: number
+  research_focus: string | null
   created_at: string
   updated_at: string
 }

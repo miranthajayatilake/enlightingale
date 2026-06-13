@@ -22,12 +22,15 @@ class Muse(MuseBase, table=True):
     status: str = "active"           # active | archived
     agent_status: str = "idle"       # idle | running | complete | failed
     resource_count: int = 0
+    research_focus: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class MuseCreate(MuseBase):
-    pass
+class MuseCreate(SQLModel):
+    """Request body for creating a Muse — name is generated server-side."""
+    description: str
+    knowledge_level: str = "beginner"
 
 
 class MuseUpdate(SQLModel):
@@ -43,5 +46,6 @@ class MuseRead(MuseBase):
     status: str
     agent_status: str
     resource_count: int
+    research_focus: Optional[str] = None
     created_at: datetime
     updated_at: datetime

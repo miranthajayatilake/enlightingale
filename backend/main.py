@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from core.logging import logger
-from models.database import create_db_and_tables
+from models.database import create_db_and_tables, run_migrations
 from api import muses, websocket, research_agent, resources, knowledge, lessons, chat, voice, canvas
 
 
@@ -18,6 +18,7 @@ async def lifespan(app: FastAPI):
     Path(settings.FILES_PATH).mkdir(parents=True, exist_ok=True)
 
     create_db_and_tables()
+    run_migrations()
     logger.info("Database ready")
 
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))

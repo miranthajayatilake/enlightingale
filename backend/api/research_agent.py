@@ -51,6 +51,9 @@ async def run_agent(
 ):
     muse = _muse_or_404(muse_id, session)
 
+    # Use user-supplied focus if given, otherwise fall back to the Muse's interpreted focus.
+    focus = body.focus or muse.research_focus
+
     job = BackgroundJob(muse_id=muse_id, job_type="research_agent")
     session.add(job)
     muse.agent_status = "running"
@@ -59,7 +62,7 @@ async def run_agent(
     session.refresh(job)
 
     await request.app.state.arq_pool.enqueue_job(
-        "run_research_agent", muse_id=muse_id, job_id=job.id, focus=body.focus
+        "run_research_agent", muse_id=muse_id, job_id=job.id, focus=focus
     )
     return job
 

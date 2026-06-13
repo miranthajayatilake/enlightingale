@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from models.database import get_session
+from models.job import BackgroundJob
 from models.muse import Muse, MuseCreate, MuseUpdate, MuseRead
-from services.knowledge.autorebuild import maybe_enqueue_kl_build
+from services.muse.interpreter import interpret_description
 
 router = APIRouter(prefix="/muses", tags=["muses"])
 
@@ -16,11 +17,30 @@ def list_muses(session: Session = Depends(get_session)):
 
 @router.post("", response_model=MuseRead, status_code=201)
 async def create_muse(body: MuseCreate, request: Request, session: Session = Depends(get_session)):
-    muse = Muse(**body.model_dump(), agent_status="idle")
+    interpreted = await interpret_description(body.description)
+    muse = Muse(
+        name=interpreted.name,
+        description=body.description,
+        knowledge_level=body.knowledge_level,
+        research_focus=interpreted.research_focus,
+        agent_status="running",
+    )
     session.add(muse)
     session.commit()
     session.refresh(muse)
-    await maybe_enqueue_kl_build(muse.id, request.app.state.arq_pool, session)
+
+    job = BackgroundJob(muse_id=muse.id, job_type="research_agent")
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+
+    await request.app.state.arq_pool.enqueue_job(
+        "run_research_agent",
+        muse_id=muse.id,
+        job_id=job.id,
+        focus=muse.research_focus,
+        auto_approve=True,
+    )
     return muse
 
 

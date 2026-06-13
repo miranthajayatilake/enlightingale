@@ -5,7 +5,7 @@ import { api, type Muse, type Resource } from '@/lib/api'
 import { Button, Input, Textarea } from '@/design-system'
 import { cn } from '@/lib/utils'
 
-type Step = 1 | 2 | 3 | 4
+type Step = 1 | 2
 type Level = 'beginner' | 'some' | 'familiar'
 type SPType = 'url' | 'pdf' | 'note'
 
@@ -14,7 +14,6 @@ interface StartingPoint {
   type: SPType
   url?: string
   file?: File
-  noteTitle?: string
   noteContent?: string
   label: string
 }
@@ -27,16 +26,23 @@ const LEVELS: { value: Level; label: string; desc: string; emoji: string }[] = [
 
 const SP_ICON: Record<SPType, string> = { url: '🔗', pdf: '📄', note: '📝' }
 
+function deriveNoteLabel(content: string): string {
+  for (const line of content.split('\n')) {
+    const clean = line.replace(/^[#* ]+/, '').trim()
+    if (clean) return clean.length > 60 ? clean.slice(0, 60).trimEnd() + '…' : clean
+  }
+  return 'Note'
+}
+
 export function NewMuse() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const [step, setStep]           = useState<Step>(1)
-  const [name, setName]           = useState('')
+  const [step, setStep]               = useState<Step>(1)
   const [description, setDescription] = useState('')
-  const [level, setLevel]         = useState<Level>('beginner')
-  const [points, setPoints]       = useState<StartingPoint[]>([])
-  const [submitting, setSubmitting] = useState(false)
+  const [level, setLevel]             = useState<Level>('beginner')
+  const [points, setPoints]           = useState<StartingPoint[]>([])
+  const [submitting, setSubmitting]   = useState(false)
   const [submitError, setSubmitError] = useState('')
 
   function removePoint(id: string) {
@@ -47,10 +53,10 @@ export function NewMuse() {
     setSubmitError('')
     setSubmitting(true)
     try {
-      const muse = await api.post<Muse>('/muses', { name, description, knowledge_level: level })
+      const muse = await api.post<Muse>('/muses', { description, knowledge_level: level })
       queryClient.invalidateQueries({ queryKey: ['muses'] })
 
-      // Fire resource creation for each starting point; failures are soft (pipeline still runs).
+      // Fire resource creation in parallel; failures are soft.
       await Promise.allSettled(
         withPoints.map((sp) => {
           if (sp.type === 'url') {
@@ -61,17 +67,16 @@ export function NewMuse() {
             fd.append('file', sp.file!)
             return api.upload<Resource>(`/muses/${muse.id}/resources/upload`, fd)
           }
-          // note
+          // note — no title sent; server auto-derives from content
           return api.post<Resource>(`/muses/${muse.id}/resources`, {
             source_type: 'text',
-            title: sp.noteTitle,
             content: sp.noteContent,
           })
         })
       )
 
       navigate(`/muse/${muse.id}`)
-    } catch (err) {
+    } catch {
       setSubmitError('Something went wrong. Please try again.')
     } finally {
       setSubmitting(false)
@@ -81,105 +86,71 @@ export function NewMuse() {
   return (
     <div className="flex flex-col items-center justify-center min-h-full py-16 px-8">
       <div className="w-full max-w-lg">
-        {/* Step indicator — 4 segments; step 4 optional */}
+        {/* Step indicator — 2 segments, step 2 optional */}
         <div className="flex items-center gap-2 mb-10">
-          {([1, 2, 3, 4] as Step[]).map((s) => (
-            <div
-              key={s}
-              className={cn(
-                'h-1 flex-1 rounded-full transition-colors duration-300',
-                s < step  ? 'bg-accent' :
-                s === step ? 'bg-accent' :
-                s === 4   ? 'bg-border/60' :
-                'bg-border',
-              )}
-            />
-          ))}
+          <div className={cn('h-1 flex-1 rounded-full transition-colors duration-300', 'bg-accent')} />
+          <div className={cn(
+            'h-1 flex-1 rounded-full transition-colors duration-300',
+            step === 2 ? 'bg-accent' : 'bg-border/60',
+          )} />
         </div>
 
         {step === 1 && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             <div>
-              <h1 className="text-2xl font-semibold text-ink mb-1">Name your Muse</h1>
-              <p className="text-ink-secondary text-sm">What topic do you want to explore?</p>
-            </div>
-            <Input
-              placeholder="e.g. The Roman Republic, Natural Wine, Quantum Computing"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
-            <div className="flex justify-end">
-              <Button onClick={() => setStep(2)} disabled={!name.trim()}>Continue →</Button>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-ink mb-1">What do you want to understand?</h1>
+              <h1 className="text-2xl font-semibold text-ink mb-1">What do you want to explore?</h1>
               <p className="text-ink-secondary text-sm">
-                Be specific — this guides the Research Agent and shapes your Canvas.
+                Describe it in your own words — a topic, a problem, a curiosity, anything.
               </p>
             </div>
+
             <Textarea
-              placeholder="e.g. Why did the Roman Republic collapse, and what made it so powerful before it did?"
+              placeholder="e.g. I've been struggling to understand why my startup's retention is so poor and what I can do about it."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               autoFocus
             />
-            <div className="flex justify-between">
-              <Button variant="ghost" onClick={() => setStep(1)}>← Back</Button>
-              <Button onClick={() => setStep(3)} disabled={!description.trim()}>Continue →</Button>
-            </div>
-          </div>
-        )}
 
-        {step === 3 && (
-          <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-semibold text-ink mb-1">Where are you starting from?</h1>
-              <p className="text-ink-secondary text-sm">
-                This calibrates the depth of your Canvas and the Research Agent's choices.
-              </p>
-            </div>
-            <div className="space-y-3">
-              {LEVELS.map(({ value, label, desc, emoji }) => (
-                <button
-                  key={value}
-                  onClick={() => setLevel(value)}
-                  className={cn(
-                    'w-full text-left px-4 py-4 rounded-lg border transition-all duration-150',
-                    level === value
-                      ? 'border-accent bg-accent-light ring-2 ring-accent/20'
-                      : 'border-border bg-surface hover:border-border-strong hover:bg-cream-hover',
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{emoji}</span>
-                    <div>
-                      <p className="font-medium text-ink text-sm">{label}</p>
-                      <p className="text-ink-muted text-xs mt-0.5">{desc}</p>
+              <p className="text-sm font-medium text-ink mb-3">Where are you starting from?</p>
+              <div className="space-y-2">
+                {LEVELS.map(({ value, label, desc, emoji }) => (
+                  <button
+                    key={value}
+                    onClick={() => setLevel(value)}
+                    className={cn(
+                      'w-full text-left px-4 py-3.5 rounded-lg border transition-all duration-150',
+                      level === value
+                        ? 'border-accent bg-accent-light ring-2 ring-accent/20'
+                        : 'border-border bg-surface hover:border-border-strong hover:bg-cream-hover',
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{emoji}</span>
+                      <div>
+                        <p className="font-medium text-ink text-sm">{label}</p>
+                        <p className="text-ink-muted text-xs mt-0.5">{desc}</p>
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex justify-between">
-              <Button variant="ghost" onClick={() => setStep(2)}>← Back</Button>
-              <Button onClick={() => setStep(4)}>Continue →</Button>
+
+            <div className="flex justify-end">
+              <Button onClick={() => setStep(2)} disabled={!description.trim()}>
+                Let's go →
+              </Button>
             </div>
           </div>
         )}
 
-        {step === 4 && (
-          <Step4
-            museName={name}
+        {step === 2 && (
+          <Step2
             points={points}
             setPoints={setPoints}
-            onBack={() => setStep(3)}
+            onBack={() => setStep(1)}
             onRemove={removePoint}
             onSkip={() => createMuseAndResources([])}
             onCreate={() => createMuseAndResources(points)}
@@ -192,10 +163,9 @@ export function NewMuse() {
   )
 }
 
-// ── Step 4 ────────────────────────────────────────────────────────────────────
+// ── Step 2 — Starting points (optional) ──────────────────────────────────────
 
-interface Step4Props {
-  museName: string
+interface Step2Props {
   points: StartingPoint[]
   setPoints: React.Dispatch<React.SetStateAction<StartingPoint[]>>
   onBack: () => void
@@ -206,7 +176,7 @@ interface Step4Props {
   error: string
 }
 
-function Step4({ museName, points, setPoints, onBack, onRemove, onSkip, onCreate, submitting, error }: Step4Props) {
+function Step2({ points, setPoints, onBack, onRemove, onSkip, onCreate, submitting, error }: Step2Props) {
   const [tab, setTab] = useState<SPType>('url')
 
   function addPoint(sp: Omit<StartingPoint, 'localId'>) {
@@ -227,7 +197,7 @@ function Step4({ museName, points, setPoints, onBack, onRemove, onSkip, onCreate
           <span className="text-xs font-medium text-ink-muted bg-cream-hover px-2 py-0.5 rounded-full">optional</span>
         </div>
         <p className="text-ink-secondary text-sm">
-          Have a great article, paper, or note about <strong>{museName}</strong>? Drop it in — your Canvas will reflect it right away.
+          Have a great article, paper, or note? Drop it in — your Canvas will reflect it right away.
         </p>
       </div>
 
@@ -252,7 +222,6 @@ function Step4({ museName, points, setPoints, onBack, onRemove, onSkip, onCreate
       {tab === 'pdf'  && <PdfAdder  onAdd={addPoint} />}
       {tab === 'note' && <NoteAdder onAdd={addPoint} />}
 
-      {/* Added items list */}
       {points.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-medium text-ink-muted uppercase tracking-wide">Added</p>
@@ -385,39 +354,31 @@ function PdfAdder({ onAdd }: { onAdd: (sp: Omit<StartingPoint, 'localId'>) => vo
 }
 
 function NoteAdder({ onAdd }: { onAdd: (sp: Omit<StartingPoint, 'localId'>) => void }) {
-  const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
 
   function handleAdd() {
     setError('')
-    if (!title.trim()) { setError('Please enter a title'); return }
     if (!content.trim()) { setError('Please enter some content'); return }
-    onAdd({ type: 'note', noteTitle: title.trim(), noteContent: content.trim(), label: title.trim() })
-    setTitle('')
+    onAdd({ type: 'note', noteContent: content.trim(), label: deriveNoteLabel(content) })
     setContent('')
   }
 
   return (
     <div className="space-y-3">
-      <Input
-        placeholder="Title"
-        value={title}
-        onChange={(e) => { setTitle(e.target.value); setError('') }}
-        autoFocus
-      />
       <Textarea
         placeholder="Paste or type your notes here…"
         value={content}
         onChange={(e) => { setContent(e.target.value); setError('') }}
         rows={5}
+        autoFocus
       />
       {error && <p className="text-xs text-error">{error}</p>}
       <div className="flex justify-end">
         <Button
           variant="secondary"
           onClick={handleAdd}
-          disabled={!title.trim() || !content.trim()}
+          disabled={!content.trim()}
         >
           Add Note
         </Button>

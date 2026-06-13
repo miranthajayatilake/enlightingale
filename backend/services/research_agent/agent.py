@@ -38,7 +38,13 @@ async def _pub(redis_conn, job_id: str, payload: dict) -> None:
     await redis_conn.publish(f"job_progress:{job_id}", json.dumps(payload))
 
 
-async def run(muse_id: str, job_id: str, redis_conn, focus: str | None = None) -> None:
+async def run(
+    muse_id: str,
+    job_id: str,
+    redis_conn,
+    focus: str | None = None,
+    auto_approve: bool = False,
+) -> None:
     # ── Load muse ────────────────────────────────────────────────────────────
     with Session(engine) as session:
         muse = session.get(Muse, muse_id)
@@ -116,9 +122,9 @@ async def run(muse_id: str, job_id: str, redis_conn, focus: str | None = None) -
                     source_type="url",
                     source_url=item["url"],
                     raw_content=item.get("raw_content") or item.get("content", ""),
-                    summary=item.get("content"),   # Tavily snippet as preview summary
+                    summary=item.get("content"),
                     origin="research_agent",
-                    approved=False,   # requires user review
+                    approved=auto_approve,  # auto-approve on first creation pass; else user reviews
                     status="ready",
                 ))
 
@@ -126,7 +132,11 @@ async def run(muse_id: str, job_id: str, redis_conn, focus: str | None = None) -
             if job:
                 job.progress = 100
                 job.status = "complete"
-                job.status_message = f"Complete — {len(selected)} resources ready for review"
+                job.status_message = (
+                    f"Complete — {len(selected)} resources added"
+                    if auto_approve
+                    else f"Complete — {len(selected)} resources ready for review"
+                )
                 job.result = {
                     "resource_count": len(selected),
                     "coverage_summary": report.get("coverage_summary", ""),
@@ -150,6 +160,13 @@ async def run(muse_id: str, job_id: str, redis_conn, focus: str | None = None) -
             "coverage_summary": report.get("coverage_summary", ""),
             "gaps": report.get("gaps", []),
         })
+
+        # When auto_approve is set (creation pipeline), immediately kick off the KL build
+        # so the Canvas is composed from the research results.
+        if auto_approve:
+            from services.knowledge.autorebuild import maybe_enqueue_kl_build
+            with Session(engine) as session:
+                await maybe_enqueue_kl_build(muse_id, redis_conn, session)
 
     except Exception as exc:
         error_msg = str(exc)

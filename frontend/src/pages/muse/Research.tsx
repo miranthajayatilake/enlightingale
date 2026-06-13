@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Muse, type Resource } from '@/lib/api'
-import { Badge, Button, Card, Spinner } from '@/design-system'
+import { Badge, Button, Card, Input, Spinner } from '@/design-system'
 import { AddResourceModal } from '@/features/resources/AddResourceModal'
 import { AgentStatusPanel } from '@/features/research-agent/AgentStatusPanel'
 import { ResourceReviewList } from '@/features/research-agent/ResourceReviewList'
@@ -29,10 +29,18 @@ export function Research() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-8 max-w-3xl mx-auto space-y-10">
-        <ResearchAgentSection muse={muse} />
-        <SourcesSection muse={muse} />
-        <ChatSection muse={muse} />
+      <div className="p-8 max-w-3xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold text-ink">Research</h1>
+          <p className="text-sm text-ink-muted mt-0.5">
+            Send the Research Agent, manage your sources, or ask a question.
+          </p>
+        </div>
+        <div className="space-y-10">
+          <ResearchAgentSection muse={muse} />
+          <SourcesSection muse={muse} />
+          <ChatSection muse={muse} />
+        </div>
       </div>
     </div>
   )
@@ -42,6 +50,7 @@ export function Research() {
 
 function ResearchAgentSection({ muse }: { muse: Muse }) {
   const queryClient = useQueryClient()
+  const [focus, setFocus] = useState('')
   const { latestEvent, subtopics, searching, job } = useAgentStatus(muse.id, muse.agent_status)
 
   const { data: agentResults } = useQuery({
@@ -52,8 +61,10 @@ function ResearchAgentSection({ muse }: { muse: Muse }) {
   })
 
   const runAgent = useMutation({
-    mutationFn: () => api.post(`/muses/${muse.id}/agent/run`, {}),
+    mutationFn: (focusText: string) =>
+      api.post(`/muses/${muse.id}/agent/run`, focusText.trim() ? { focus: focusText.trim() } : {}),
     onSuccess: () => {
+      setFocus('')
       queryClient.invalidateQueries({ queryKey: ['muse', muse.id] })
       queryClient.invalidateQueries({ queryKey: ['muses'] })
       queryClient.invalidateQueries({ queryKey: ['canvas', muse.id] })
@@ -63,37 +74,40 @@ function ResearchAgentSection({ muse }: { muse: Muse }) {
   })
 
   const progress = latestEvent?.progress ?? (job?.progress ?? (muse.agent_status === 'complete' ? 100 : 0))
+  const isRunning = muse.agent_status === 'running'
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-ink">Research Agent</h2>
-          <p className="text-sm text-ink-muted mt-0.5">
-            Scans the web, finds strong sources, and brings them back for your review.
-          </p>
-        </div>
-      </div>
-
-      <Card className="p-6">
-        {runAgent.isError && (
-          <p className="text-xs text-error mb-3">
-            Couldn't start the Research Agent. Please try again.
-          </p>
-        )}
-        {muse.agent_status === 'idle' && (
-          <div className="flex items-end justify-between gap-6">
-            <p className="text-sm text-ink-secondary leading-relaxed max-w-sm">
-              Send the Research Agent to dig deeper into <strong>{muse.name}</strong>. It builds on
-              whatever is already here and brings back a curated batch for your review.
-            </p>
-            <Button onClick={() => runAgent.mutate()} loading={runAgent.isPending} className="shrink-0">
-              Run a research pass
+      {/* Top action bar — always shown unless agent is running */}
+      {!isRunning && (
+        <Card className="p-5 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <Input
+                placeholder="What should the agent focus on? (optional — leave blank to use the Muse's focus)"
+                value={focus}
+                onChange={(e) => setFocus(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); runAgent.mutate(focus) } }}
+                disabled={runAgent.isPending}
+              />
+            </div>
+            <Button
+              onClick={() => runAgent.mutate(focus)}
+              loading={runAgent.isPending}
+              className="shrink-0"
+            >
+              {muse.agent_status === 'complete' ? 'Run another pass' : 'Run a research pass'}
             </Button>
           </div>
-        )}
+          {runAgent.isError && (
+            <p className="text-xs text-error mt-2">Couldn't start the Research Agent. Please try again.</p>
+          )}
+        </Card>
+      )}
 
-        {muse.agent_status === 'running' && (
+      {/* Running — full progress panel */}
+      {isRunning && (
+        <Card className="p-6 mb-6">
           <AgentStatusPanel
             museeName={muse.name}
             latestEvent={latestEvent}
@@ -101,42 +115,35 @@ function ResearchAgentSection({ muse }: { muse: Muse }) {
             searching={searching}
             progress={progress}
           />
-        )}
+        </Card>
+      )}
 
-        {muse.agent_status === 'complete' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-ink-muted font-medium uppercase tracking-wide">
-                Sources ready for review
+      {/* Complete — review list */}
+      {muse.agent_status === 'complete' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-ink">Sources to review</h2>
+              <p className="text-sm text-ink-muted mt-0.5">
+                Approve sources to add them to your knowledge base.
               </p>
-              <button
-                onClick={() => runAgent.mutate()}
-                disabled={runAgent.isPending}
-                className="text-xs text-ink-muted hover:text-accent disabled:opacity-50 transition-colors"
-              >
-                {runAgent.isPending ? 'Starting…' : 'Run another pass'}
-              </button>
             </div>
-            <ResourceReviewList
-              museId={muse.id}
-              coverageSummary={agentResults?.report?.coverage_summary}
-              gaps={agentResults?.report?.gaps}
-            />
           </div>
-        )}
+          <ResourceReviewList
+            museId={muse.id}
+            coverageSummary={agentResults?.report?.coverage_summary}
+            gaps={agentResults?.report?.gaps}
+          />
+        </div>
+      )}
 
-        {muse.agent_status === 'failed' && (
-          <div className="flex items-end justify-between gap-6">
-            <p className="text-sm text-error">
-              The Research Agent encountered an error.{' '}
-              <span className="text-ink-muted">You can retry or add resources manually below.</span>
-            </p>
-            <Button variant="secondary" onClick={() => runAgent.mutate()} loading={runAgent.isPending} className="shrink-0">
-              Retry
-            </Button>
-          </div>
-        )}
-      </Card>
+      {/* Failed */}
+      {muse.agent_status === 'failed' && (
+        <p className="text-sm text-error mb-6">
+          The Research Agent encountered an error.{' '}
+          <span className="text-ink-muted">Retry above or add sources manually below.</span>
+        </p>
+      )}
     </div>
   )
 }

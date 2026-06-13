@@ -23,8 +23,17 @@ class ResourceUpdate(BaseModel):
 class ResourceCreate(BaseModel):
     source_type: str        # "url" | "text"
     url: Optional[str] = None
-    title: Optional[str] = None
+    title: Optional[str] = None   # auto-derived from content if omitted for text resources
     content: Optional[str] = None
+
+
+def _derive_title(content: str) -> str:
+    """First non-empty line of content, stripped of markdown, max 80 chars."""
+    for line in content.splitlines():
+        clean = line.lstrip("#* ").strip()
+        if clean:
+            return clean[:80].rstrip() + ("…" if len(clean) > 80 else "")
+    return "Note"
 
 
 def _muse_or_404(muse_id: str, session: Session) -> Muse:
@@ -76,11 +85,11 @@ async def create_resource(
             approved=True,
         )
     elif body.source_type == "text":
-        if not body.title or not body.content:
-            raise HTTPException(status_code=422, detail="title and content are required for source_type='text'")
+        if not body.content:
+            raise HTTPException(status_code=422, detail="content is required for source_type='text'")
         resource = Resource(
             muse_id=muse_id,
-            title=body.title,
+            title=body.title or _derive_title(body.content),
             source_type="text",
             raw_content=body.content,
             status="pending",

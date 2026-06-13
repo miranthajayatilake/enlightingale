@@ -1,4 +1,5 @@
 from pathlib import Path
+from sqlalchemy import text
 from sqlmodel import SQLModel, create_engine, Session
 from core.config import settings
 
@@ -19,6 +20,17 @@ engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
 
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
+
+
+def run_migrations() -> None:
+    """Additive schema migrations that SQLModel's create_all can't handle."""
+    with engine.connect() as conn:
+        # v0.3.1 — research_focus on Muse
+        try:
+            conn.execute(text("ALTER TABLE muses ADD COLUMN research_focus TEXT"))
+            conn.commit()
+        except Exception:
+            pass  # column already exists
 
 
 def get_session():

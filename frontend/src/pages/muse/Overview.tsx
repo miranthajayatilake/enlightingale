@@ -6,15 +6,21 @@ import { api } from '@/lib/api'
 import { Button, Spinner } from '@/design-system'
 import { Canvas } from '@/features/canvas/Canvas'
 import { CanvasBuildStages } from '@/features/canvas/CanvasBuildStages'
+import { useMentorPaneStore } from '@/features/voice/mentorPaneStore'
 
 export function MuseOverview() {
   const { muse } = useOutletContext<{ muse: Muse }>()
   const queryClient = useQueryClient()
 
+  const agentRunning = muse.agent_status === 'running'
+
   const { data: kl, isLoading: klLoading, isSuccess: klLoaded } = useQuery<KnowledgeLayer | null>({
     queryKey: ['knowledge', muse.id],
     queryFn: () => api.get<KnowledgeLayer | null>(`/muses/${muse.id}/knowledge`),
-    refetchInterval: (q) => ((q.state.data as KnowledgeLayer | null)?.status === 'building' ? 3000 : false),
+    refetchInterval: (q) => {
+      const status = (q.state.data as KnowledgeLayer | null)?.status
+      return status === 'building' || agentRunning ? 3000 : false
+    },
   })
 
   const { data: canvas, isLoading: canvasLoading, isSuccess: canvasLoaded } = useQuery<MuseCanvas | null>({
@@ -24,12 +30,12 @@ export function MuseOverview() {
       const c = q.state.data as MuseCanvas | null
       const klBuilding = kl?.status === 'building'
       const klReadyNoCanvas = kl?.status === 'ready' && (!c || (c.status !== 'ready' && c.status !== 'failed'))
-      return c?.status === 'building' || klBuilding || klReadyNoCanvas ? 3000 : false
+      return c?.status === 'building' || klBuilding || klReadyNoCanvas || agentRunning ? 3000 : false
     },
   })
 
   // Poll resources while anything is building, to drive the "Reading sources" stage.
-  const isBuilding = kl?.status === 'building' || canvas?.status === 'building'
+  const isBuilding = agentRunning || kl?.status === 'building' || canvas?.status === 'building'
     || (!kl || kl.status === 'idle') || (kl?.status === 'ready' && (!canvas || canvas.status !== 'ready' && canvas.status !== 'failed'))
   const { data: resources = [] } = useQuery<Resource[]>({
     queryKey: ['resources', muse.id],
@@ -57,6 +63,16 @@ export function MuseOverview() {
 
   const buildCanvasMutate = buildCanvas.mutate
   const buildKlMutate = buildKl.mutate
+  const requestMentorOpen = useMentorPaneStore((s) => s.requestOpen)
+
+  // Open the Mentor pane the first time the Canvas becomes ready in this session.
+  const mentorOpenedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (canvas?.status === 'ready' && mentorOpenedFor.current !== muse.id) {
+      mentorOpenedFor.current = muse.id
+      requestMentorOpen()
+    }
+  }, [canvas?.status, muse.id, requestMentorOpen])
 
   // Auto-generate the Canvas once the Knowledge Layer is ready but no Canvas exists yet.
   const canvasTriggeredFor = useRef<string | null>(null)
@@ -70,17 +86,18 @@ export function MuseOverview() {
     }
   }, [canvasLoaded, kl?.status, canvas, muse.id, buildCanvas.isPending, buildCanvasMutate])
 
-  // Fallback: auto-trigger KL for pre-v0.3 Muses that have an idle KL with no Canvas.
+  // Fallback: auto-trigger KL for pre-v0.3.1 Muses that have an idle KL with no Canvas.
+  // Skip if the Research Agent is running — it will trigger KL on completion.
   const klTriggeredFor = useRef<string | null>(null)
   useEffect(() => {
     if (!klLoaded || !canvasLoaded) return
     const klIdle = !kl || kl.status === 'idle'
     const canvasNotReady = !canvas || canvas.status !== 'ready'
-    if (klIdle && canvasNotReady && klTriggeredFor.current !== muse.id && !buildKl.isPending) {
+    if (klIdle && canvasNotReady && !agentRunning && klTriggeredFor.current !== muse.id && !buildKl.isPending) {
       klTriggeredFor.current = muse.id
       buildKlMutate()
     }
-  }, [klLoaded, canvasLoaded, kl?.status, canvas?.status, muse.id, buildKl.isPending, buildKlMutate])
+  }, [klLoaded, canvasLoaded, kl?.status, canvas?.status, agentRunning, muse.id, buildKl.isPending, buildKlMutate])
 
   const klStatus = kl?.status ?? 'idle'
   const canvasStatus = canvas?.status ?? 'idle'
