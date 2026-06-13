@@ -65,7 +65,9 @@ export function MuseOverview() {
 
   // ── Ready ───────────────────────────────────────────────────────────────────
   if (canvas && canvasStatus === 'ready') {
-    return <Canvas muse={muse} canvas={canvas} />
+    // The old Canvas stays readable while a refresh runs in the background (the KL
+    // rebuilds first, then the Canvas — at which point the Building skeleton takes over).
+    return <Canvas muse={muse} canvas={canvas} rebuilding={klStatus === 'building'} />
   }
 
   // ── Building ──────────────────────────────────────────────────────────────────

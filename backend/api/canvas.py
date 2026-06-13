@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session
 
+from sqlmodel import select
+
 from models.canvas import MuseCanvas, MuseCanvasRead
 from models.database import get_session
 from models.job import BackgroundJob, JobRead
@@ -55,6 +57,17 @@ async def build_canvas(
             status_code=400,
             detail="Knowledge Layer must be built before generating the Canvas.",
         )
+
+    # Don't start a second build if one is already in flight — return the running job.
+    existing = session.exec(
+        select(BackgroundJob).where(
+            BackgroundJob.muse_id == muse_id,
+            BackgroundJob.job_type == "canvas",
+            BackgroundJob.status.in_(["queued", "running"]),
+        ).order_by(BackgroundJob.created_at.desc())
+    ).first()
+    if existing:
+        return existing
 
     canvas = session.get(MuseCanvas, muse_id)
     if not canvas:

@@ -179,23 +179,34 @@ async def build_knowledge_layer(muse_id: str, job_id: str, redis_conn) -> None:
         try:
             from models.canvas import MuseCanvas
 
+            canvas_job_id = None
             with Session(engine) as session:
-                canvas = session.get(MuseCanvas, muse_id)
-                if not canvas:
-                    canvas = MuseCanvas(muse_id=muse_id)
-                    session.add(canvas)
-                canvas.status = "building"
-                canvas.error = None
+                # Skip if a Canvas build is already queued/running for this Muse.
+                active = session.exec(
+                    select(BackgroundJob).where(
+                        BackgroundJob.muse_id == muse_id,
+                        BackgroundJob.job_type == "canvas",
+                        BackgroundJob.status.in_(["queued", "running"]),
+                    )
+                ).first()
+                if not active:
+                    canvas = session.get(MuseCanvas, muse_id)
+                    if not canvas:
+                        canvas = MuseCanvas(muse_id=muse_id)
+                        session.add(canvas)
+                    canvas.status = "building"
+                    canvas.error = None
 
-                canvas_job = BackgroundJob(muse_id=muse_id, job_type="canvas")
-                session.add(canvas_job)
-                session.commit()
-                session.refresh(canvas_job)
-                canvas_job_id = canvas_job.id
+                    canvas_job = BackgroundJob(muse_id=muse_id, job_type="canvas")
+                    session.add(canvas_job)
+                    session.commit()
+                    session.refresh(canvas_job)
+                    canvas_job_id = canvas_job.id
 
-            await redis_conn.enqueue_job(
-                "run_build_canvas", muse_id=muse_id, job_id=canvas_job_id
-            )
+            if canvas_job_id:
+                await redis_conn.enqueue_job(
+                    "run_build_canvas", muse_id=muse_id, job_id=canvas_job_id
+                )
         except Exception as canvas_exc:
             await _pub(redis_conn, job_id, {"type": "progress", "progress": 100, "step": f"Canvas enqueue skipped: {canvas_exc}"})
 

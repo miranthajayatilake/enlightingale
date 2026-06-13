@@ -44,6 +44,18 @@ async def build_knowledge(
             detail="No approved resources to build from. Add and approve resources first.",
         )
 
+    # Don't start a second build if one is already in flight — return the running job.
+    # (Prevents duplicate, racing rebuilds from rapid clicks of "Refresh overview".)
+    existing = session.exec(
+        select(BackgroundJob).where(
+            BackgroundJob.muse_id == muse_id,
+            BackgroundJob.job_type == "knowledge_layer",
+            BackgroundJob.status.in_(["queued", "running"]),
+        ).order_by(BackgroundJob.created_at.desc())
+    ).first()
+    if existing:
+        return existing
+
     kl = session.get(KnowledgeLayer, muse_id)
     if not kl:
         kl = KnowledgeLayer(muse_id=muse_id, status="building")

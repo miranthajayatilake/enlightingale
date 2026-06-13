@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Muse, type MuseCanvas } from '@/lib/api'
+import { Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
 import { useTourStore } from './tourStore'
 import { CanvasSectionShell } from './CanvasSectionShell'
@@ -9,9 +10,10 @@ import { getSectionComponent } from './sections'
 interface Props {
   muse: Muse
   canvas: MuseCanvas
+  rebuilding?: boolean
 }
 
-export function Canvas({ muse, canvas }: Props) {
+export function Canvas({ muse, canvas, rebuilding = false }: Props) {
   const sections = [...canvas.sections].sort((a, b) => a.order - b.order)
   const activeSectionId = useTourStore((s) => s.activeSectionId)
   const tourPhase = useTourStore((s) => s.tourPhase)
@@ -56,7 +58,7 @@ export function Canvas({ muse, canvas }: Props) {
       <div aria-live="polite" className="sr-only">
         {activeTitle ? `Now showing: ${activeTitle}` : ''}
       </div>
-      <CanvasHeader muse={muse} stale={canvas.stale} />
+      <CanvasHeader muse={muse} stale={canvas.stale} rebuilding={rebuilding} />
       <div className="max-w-3xl mx-auto px-6 pb-16 pt-2 space-y-2">
         {sections.map((section) => {
           const SectionComponent = getSectionComponent(section.type)
@@ -78,7 +80,7 @@ export function Canvas({ muse, canvas }: Props) {
   )
 }
 
-function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
+function CanvasHeader({ muse, stale, rebuilding }: { muse: Muse; stale: boolean; rebuilding: boolean }) {
   const queryClient = useQueryClient()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -118,20 +120,26 @@ function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
 
   return (
     <div className="sticky top-0 z-10 bg-cream/90 backdrop-blur-sm">
-      {stale && (
+      {(rebuilding || rebuildKnowledge.isPending) ? (
+        <div className="flex items-center gap-2 px-6 py-2 bg-accent-light border-b border-accent/20">
+          <Spinner size="sm" />
+          <p className="text-xs text-ink-secondary">
+            Refreshing your overview from the updated knowledge… this takes a minute.
+          </p>
+        </div>
+      ) : stale ? (
         <div className="flex items-center justify-between gap-4 px-6 py-2 bg-warning/10 border-b border-warning/20">
           <p className="text-xs text-ink-secondary">
             New knowledge has been added since this overview was built.
           </p>
           <button
             onClick={() => rebuildKnowledge.mutate()}
-            disabled={rebuildKnowledge.isPending}
-            className="text-xs font-medium text-accent hover:text-accent-hover disabled:opacity-50 shrink-0"
+            className="text-xs font-medium text-accent hover:text-accent-hover shrink-0"
           >
-            {rebuildKnowledge.isPending ? 'Refreshing…' : 'Refresh overview'}
+            Refresh overview
           </button>
         </div>
-      )}
+      ) : null}
       <div className="flex items-center justify-end px-6 py-2.5 border-b border-border">
         <div className="relative" ref={menuRef}>
           <button
