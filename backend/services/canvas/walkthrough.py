@@ -11,10 +11,29 @@ Best-effort — falls back to a one-stop-per-block plan if the model output is u
 
 import json
 
-from core.claude import async_client
+from core.llm_json import complete_json
 from core.logging import logger
-from services.canvas.planner import _parse_json
 from services.canvas.prompts import build_walkthrough_prompt
+
+# Enforced tool-use shape — guarantees `stops` is an array of {anchors, narration, …}.
+_WALKTHROUGH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "stops": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "anchors": {"type": "array", "items": {"type": "string"}},
+                    "narration": {"type": "string"},
+                    "intent": {"type": "string"},
+                },
+                "required": ["anchors", "narration"],
+            },
+        },
+    },
+    "required": ["stops"],
+}
 
 
 def _serialize_page(sections: list[dict]) -> str:
@@ -92,15 +111,8 @@ async def plan_walkthrough(
         page_block=_serialize_page(sections),
     )
     try:
-        response = await async_client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        stops = _validate_stops(
-            _parse_json(response.content[0].text).get("stops", []),
-            _valid_anchors(sections),
-        )
+        parsed = await complete_json(prompt, max_tokens=6144, input_schema=_WALKTHROUGH_SCHEMA)
+        stops = _validate_stops(parsed.get("stops", []), _valid_anchors(sections))
     except Exception:
         logger.exception("Walkthrough planning failed — using fallback plan")
         return _fallback_plan(sections)

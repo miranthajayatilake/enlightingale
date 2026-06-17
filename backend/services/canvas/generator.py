@@ -26,11 +26,11 @@ from models.knowledge import KnowledgeLayer
 from models.lesson import Lesson
 from models.muse import Muse
 from models.resource import Resource
-from services.canvas.planner import _parse_json, plan_canvas
+from services.canvas.planner import plan_canvas
 from services.canvas.prompts import SECTION_SCHEMAS, build_section_prompt
 from services.canvas.signature import compute_source_signature
 from services.canvas.walkthrough import plan_walkthrough
-from core.claude import async_client
+from core.llm_json import complete_json
 from core.logging import logger
 
 _LEVEL_NOTE = {
@@ -103,6 +103,14 @@ def _extract_anchors(block_id: str, section_type: str, data: dict) -> list[str]:
     return anchors
 
 
+# Enforced tool-use shape — guarantees the section content is nested under a "data" object.
+_SECTION_SCHEMA = {
+    "type": "object",
+    "properties": {"data": {"type": "object"}},
+    "required": ["data"],
+}
+
+
 async def _generate_section(
     stub: dict, order: int, muse_name: str, level_note: str, context_block: str
 ) -> dict | None:
@@ -115,18 +123,17 @@ async def _generate_section(
         level_note=level_note,
         context_block=context_block,
     )
-    response = await async_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-    )
     try:
-        parsed = _parse_json(response.content[0].text)
-    except (json.JSONDecodeError, ValueError):
-        logger.warning(f"Canvas block '{section_type}' returned unparseable JSON — dropping")
+        parsed = await complete_json(prompt, max_tokens=2048, input_schema=_SECTION_SCHEMA)
+    except ValueError:
+        logger.warning(f"Canvas block '{section_type}' could not be generated — dropping")
         return None
 
+    # Tool use sometimes returns the section fields at the top level rather than under a
+    # "data" wrapper — accept either shape.
     data = parsed.get("data")
+    if not isinstance(data, dict):
+        data = parsed
     if not isinstance(data, dict):
         logger.warning(f"Canvas block '{section_type}' missing data — dropping")
         return None

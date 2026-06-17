@@ -1,6 +1,4 @@
-import json
-
-from core.claude import async_client
+from core.llm_json import complete_json
 from services.canvas.prompts import SECTION_SCHEMAS, build_planner_prompt
 
 _WIDTHS = {"full", "wide", "half"}
@@ -9,13 +7,42 @@ _HERO_STYLES = {"bold", "quiet", "editorial"}
 _DENSITIES = {"airy", "balanced", "dense"}
 _ACCENT_TREATMENTS = {"wash", "rule", "none"}
 
-
-def _parse_json(text: str) -> dict:
-    text = text.strip()
-    if text.startswith("```"):
-        parts = text.split("```")
-        text = parts[1].lstrip("json").strip() if len(parts) >= 2 else text
-    return json.loads(text)
+# Enforced tool-use shape — guarantees `sections` is an array of {type, title, …}.
+_PLANNER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "theme": {
+            "type": "object",
+            "properties": {
+                "motif": {"type": "string"},
+                "hero_style": {"type": "string"},
+                "density": {"type": "string"},
+                "accent_treatment": {"type": "string"},
+            },
+        },
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "title": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "layout": {
+                        "type": "object",
+                        "properties": {
+                            "width": {"type": "string"},
+                            "emphasis": {"type": "string"},
+                            "columns": {"type": "integer"},
+                        },
+                    },
+                },
+                "required": ["type", "title"],
+            },
+        },
+    },
+    "required": ["sections"],
+}
 
 
 def _normalize_layout(raw: object) -> dict:
@@ -62,12 +89,7 @@ async def plan_canvas(
         lesson_titles=lesson_titles,
     )
 
-    response = await async_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    parsed = _parse_json(response.content[0].text)
+    parsed = await complete_json(prompt, max_tokens=4096, input_schema=_PLANNER_SCHEMA)
     theme = _normalize_theme(parsed.get("theme"))
 
     blocks = [
