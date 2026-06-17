@@ -48,6 +48,11 @@ export function MentorPane({ muse }: Props) {
   }, [openRequested, clearOpenRequest])
 
   const museName = muse.name.length > 22 ? 'this Muse' : muse.name
+  const n = muse.resource_count
+  const greeting =
+    n > 0
+      ? `I went and researched ${museName} for you — went through ${n} ${n === 1 ? 'source' : 'sources'} and built this page from what I found. Want me to walk you through it?`
+      : `I went and researched ${museName} for you and built this page from what I found. Want me to walk you through it?`
 
   // ── Collapsed strip ────────────────────────────────────────────────────────
   if (!expanded) {
@@ -96,32 +101,35 @@ export function MentorPane({ muse }: Props) {
         </button>
       </div>
 
-      {/* ── Idle ──────────────────────────────────────────────────────────── */}
+      {/* ── Idle — first-person chat greeting; the CTA starts the voice tour ── */}
       {status === 'idle' && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-5 px-5 text-center">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-accent/40 to-accent/10 flex items-center justify-center text-2xl shadow-sm">
-            🎙
+        <div className="flex-1 flex flex-col px-4 py-5 gap-4 overflow-y-auto">
+          <div className="flex gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent/40 to-accent/10 flex items-center justify-center text-sm shadow-sm shrink-0">
+              🎙
+            </div>
+            <div className="rounded-lg rounded-tl-sm bg-cream border border-border px-3.5 py-3">
+              <span className="block text-[10px] font-semibold text-ink-muted mb-1 uppercase tracking-wide">
+                Mentor
+              </span>
+              <p className="text-xs text-ink leading-relaxed">{greeting}</p>
+            </div>
           </div>
-          <div>
-            <p className="font-semibold text-ink text-sm">Your Mentor is ready</p>
-            <p className="text-xs text-ink-secondary mt-1.5 leading-relaxed max-w-[230px]">
-              Mentor will walk you through {museName} on the page — narrating each section, connecting ideas, and making it stick.
-              Jump in anytime to ask a question.
-            </p>
+          <div className="mt-auto flex flex-col gap-2">
+            <button
+              onClick={startTour}
+              className="w-full py-2.5 px-4 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover transition-colors"
+            >
+              Yes — walk me through it
+            </button>
+            <button
+              onClick={() => start('chat')}
+              className="text-xs text-ink-secondary hover:text-accent transition-colors"
+            >
+              I'll just read for now
+            </button>
+            <p className="text-xs text-ink-muted text-center mt-1">Voice starts when you tap — microphone required</p>
           </div>
-          <button
-            onClick={startTour}
-            className="w-full py-2.5 px-4 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover transition-colors"
-          >
-            Walk me through {museName}
-          </button>
-          <button
-            onClick={() => start('chat')}
-            className="text-xs text-ink-secondary hover:text-accent transition-colors -mt-2"
-          >
-            or just chat
-          </button>
-          <p className="text-xs text-ink-muted -mt-1">Microphone access required</p>
         </div>
       )}
 

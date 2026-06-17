@@ -32,6 +32,20 @@ def run_migrations() -> None:
         except Exception:
             pass  # column already exists
 
+        # v0.4 — theme on MuseCanvas (free-form, topic-tailored Canvas)
+        try:
+            conn.execute(text("ALTER TABLE muse_canvases ADD COLUMN theme TEXT DEFAULT '{}'"))
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
+        # v0.4 Phase B — walkthrough (Mentor's authored teaching plan) on MuseCanvas
+        try:
+            conn.execute(text("ALTER TABLE muse_canvases ADD COLUMN walkthrough TEXT DEFAULT '{}'"))
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
 
 def get_session():
     with Session(engine) as session:

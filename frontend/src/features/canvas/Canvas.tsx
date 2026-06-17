@@ -5,8 +5,16 @@ import { api, type Muse, type MuseCanvas } from '@/lib/api'
 import { Button, Spinner } from '@/design-system'
 import { useTourStore } from './tourStore'
 import { useMentorPaneStore } from '@/features/voice/mentorPaneStore'
-import { CanvasSectionShell } from './CanvasSectionShell'
-import { getSectionComponent } from './sections'
+import { BlockRenderer } from './BlockRenderer'
+import { ExplainPopup } from './ExplainPopup'
+import { useAnchorTarget } from './useAnchorTarget'
+import { cn } from '@/lib/utils'
+
+const DENSITY_GAP: Record<string, string> = {
+  airy: 'space-y-6',
+  balanced: 'space-y-2',
+  dense: 'space-y-0.5',
+}
 
 interface Props {
   muse: Muse
@@ -15,12 +23,15 @@ interface Props {
 
 export function Canvas({ muse, canvas }: Props) {
   const sections = [...canvas.sections].sort((a, b) => a.order - b.order)
-  const activeSectionId = useTourStore((s) => s.activeSectionId)
+  const activeAnchorIds = useTourStore((s) => s.activeAnchorIds)
   const tourPhase = useTourStore((s) => s.tourPhase)
-  const requestJump = useTourStore((s) => s.requestJump)
+  const requestExplain = useTourStore((s) => s.requestExplain)
   const containerRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+
+  // Dynamic "Explain this": resolve a click/selection to the nearest anchor and offer it.
+  const { target: explainTarget, clear: clearExplain } = useAnchorTarget(containerRef)
 
   // Distinguish our own programmatic scrolls from the user's, so we can respect manual scroll.
   const lastManualScrollRef = useRef(0)
@@ -36,21 +47,31 @@ export function Canvas({ muse, canvas }: Props) {
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
 
-  // During a Guided Tour, scroll the section the Mentor is narrating into view — unless the
-  // user has scrolled manually in the last few seconds (don't fight them).
+  // During a Guided Tour, outline the anchored element(s) the Mentor is narrating and scroll
+  // the most specific one into view — unless the user scrolled manually in the last few
+  // seconds (don't fight them). A bare block id is shown via the block's active shell, so we
+  // only outline sub-element anchors here.
   useEffect(() => {
-    if (!activeSectionId) return
+    const el = containerRef.current
+    if (!el) return
+    el.querySelectorAll('.canvas-anchor-active').forEach((n) => n.classList.remove('canvas-anchor-active'))
+    if (activeAnchorIds.length === 0) return
+
+    const subAnchors = activeAnchorIds.filter((a) => a.includes('.'))
+    subAnchors.forEach((a) => {
+      el.querySelectorAll(`[data-anchor="${CSS.escape(a)}"]`).forEach((n) => n.classList.add('canvas-anchor-active'))
+    })
+
     if (Date.now() - lastManualScrollRef.current < 4000) return
-    const target = containerRef.current?.querySelector<HTMLElement>(
-      `[data-canvas-section="${CSS.escape(activeSectionId)}"]`,
-    )
+    const targetId = subAnchors[0] ?? activeAnchorIds[0]
+    const target = el.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(targetId)}"]`)
     if (!target) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     autoScrollingRef.current = true
     target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
     const timer = window.setTimeout(() => { autoScrollingRef.current = false }, 1000)
     return () => window.clearTimeout(timer)
-  }, [activeSectionId])
+  }, [activeAnchorIds])
 
   const runFocusedAgent = useMutation({
     mutationFn: (focus: string) => api.post(`/muses/${muse.id}/agent/run`, { focus }),
@@ -66,7 +87,8 @@ export function Canvas({ muse, canvas }: Props) {
     [runFocusedAgent]
   )
 
-  const activeTitle = sections.find((s) => s.id === activeSectionId)?.title
+  const activeBlockIds = new Set(activeAnchorIds.map((a) => a.split('.')[0]))
+  const activeTitle = sections.find((s) => s.id === activeAnchorIds[0]?.split('.')[0])?.title
 
   return (
     <div ref={containerRef} className="h-full overflow-y-auto">
@@ -75,31 +97,31 @@ export function Canvas({ muse, canvas }: Props) {
         {activeTitle ? `Now showing: ${activeTitle}` : ''}
       </div>
       <CanvasHeader muse={muse} stale={canvas.stale} />
-      <div className="max-w-3xl mx-auto px-6 pb-16 pt-2 space-y-2">
-        {sections.map((section) => {
-          const SectionComponent = getSectionComponent(section.type)
-          const active = section.id === activeSectionId
-          return (
-            <CanvasSectionShell
-              key={section.id}
-              id={section.id}
-              active={active}
-              paused={active && tourPhase === 'detour'}
-              onExplain={requestJump}
-            >
-              <SectionComponent
-                section={section}
-                museId={muse.id}
-                onFocusedResearch={onFocusedResearch}
-                focusedResearchPending={runFocusedAgent.isPending}
-              />
-            </CanvasSectionShell>
-          )
-        })}
+      <div className={cn('max-w-3xl mx-auto px-6 pb-16 pt-2', DENSITY_GAP[canvas.theme?.density ?? 'balanced'])}>
+        {sections.map((section) => (
+          <BlockRenderer
+            key={section.id}
+            section={section}
+            theme={canvas.theme}
+            active={activeBlockIds.has(section.id)}
+            paused={activeBlockIds.has(section.id) && tourPhase === 'detour'}
+            museId={muse.id}
+            onFocusedResearch={onFocusedResearch}
+            focusedResearchPending={runFocusedAgent.isPending}
+          />
+        ))}
 
         {/* End-of-Canvas CTA */}
         <CanvasEndCTA muse={muse} />
       </div>
+
+      {explainTarget && (
+        <ExplainPopup
+          target={explainTarget}
+          onExplain={(t) => requestExplain(t.anchorId, t.selectedText)}
+          onDismiss={clearExplain}
+        />
+      )}
     </div>
   )
 }

@@ -12,7 +12,7 @@ This file is the complete reference for working on this codebase. Read it before
 
 The product is in active Phase 1 development. The full PRD is at `project-management/PRD-Enlightingale.md`. The Phase 1 development plan is at `docs/plans/phase-1-development-plan.md`.
 
-**Release status:** v0.3.2 is the latest tagged release. Codebase is a git repo with `main` tracking `github.com/miranthajayatilake/enlightingale`. `.env` and `data/` are gitignored — never commit them.
+**Release status:** v0.3.2 is the latest tagged release; **v0.4 (Mentor-Authored, Free-Form Canvas) is built but untagged.** Codebase is a git repo with `main` tracking `github.com/miranthajayatilake/enlightingale`. `.env` and `data/` are gitignored — never commit them.
 
 ---
 
@@ -35,6 +35,10 @@ These are the product's canonical terms. Use them exactly everywhere: in code, c
 | **Canvas Section** | One typed block in the Canvas (hero, concept cluster, timeline, comparison, takeaways, …); has visual content **and** a `narration` script | Slide, Card, Widget, Block |
 | **Guided Tour** | A Mentor voice session that narrates the Canvas section by section, highlighting as it goes | Walkthrough, Presentation mode |
 | **Detour** | A user-initiated Q&A excursion mid-tour, after which the Mentor re-anchors and resumes | Interruption |
+| **Walkthrough Plan** | The Mentor's ordered teaching plan, authored by *reading the finished Canvas* (v0.4 Phase B): a list of Stops, each with Anchor refs + narration. The spine the Guided Tour follows | Script, Outline |
+| **Stop** | One step in the Walkthrough Plan — what the Mentor narrates next and which Anchor(s) it highlights. The unit of the tour (replaces "Canvas Section" as the tour unit) | Slide, Beat |
+| **Anchor** | A stable, addressable point in the Canvas the Mentor can highlight or be asked to explain — a whole block *or* a single element (heading, paragraph, concept, event, …). Stamped as `data-anchor` | — |
+| **Explain This** | The dynamic floating popup that appears where the user clicks/selects on the Canvas, offering an on-the-spot Mentor explanation of that Anchor | Tooltip, Hover card |
 
 ---
 
@@ -222,18 +226,19 @@ enlightingale/
 │   │   │   ├── builder.py           ← summarizer, concept extractor, glossary, synthesis
 │   │   │   └── autorebuild.py       ← maybe_enqueue_kl_build() — deduped KL trigger after resource changes
 │   │   ├── canvas/
-│   │   │   ├── planner.py           ← plan_canvas(): Claude picks free-form section sequence
-│   │   │   ├── generator.py         ← build_canvas() arq job; special-cases data_sources with resource manifest
-│   │   │   ├── prompts.py           ← SECTION_SCHEMAS (10 types) + build_planner_prompt/build_section_prompt
+│   │   │   ├── planner.py           ← plan_canvas(): composes free-form (theme, blocks) — no spine/length rules
+│   │   │   ├── generator.py         ← build_canvas() arq job: Phase A (blocks + anchors, NO narration) → Phase B (walkthrough)
+│   │   │   ├── walkthrough.py       ← plan_walkthrough(): Phase B — Mentor reads page → Walkthrough Plan (stops)
+│   │   │   ├── prompts.py           ← SECTION_SCHEMAS (12 types) + planner / section / walkthrough prompts
 │   │   │   └── signature.py         ← compute_source_signature() — staleness fingerprint
 │   │   ├── lessons/
 │   │   │   └── generator.py         ← curriculum + lesson writer + quiz gen; full try/except
 │   │   ├── chat/
 │   │   │   └── rag.py               ← RAG retrieval + Claude streaming
 │   │   └── voice/
-│   │       ├── context.py           ← build_system_prompt(), build_tour_system_prompt(),
-│   │       │                           build_tour_intro_text() — sources + intent + agenda orientation
-│   │       └── tour.py              ← TourController: intro phase → section-by-section dispatch
+│   │       ├── context.py           ← system/tour prompts (first-person authorship) +
+│   │       │                           load_canvas_sections / load_walkthrough_stops + build_tour_intro_text()
+│   │       └── tour.py              ← TourController: intro → stop-by-stop dispatch (canvas_focus anchors) + jump/explain
 │   │
 │   ├── vector_store/
 │   │   ├── base.py                  ← VectorStore ABC (Chunk, SearchResult dataclasses)
@@ -270,9 +275,9 @@ enlightingale/
 
 ### MentorPane
 
-`frontend/src/features/voice/MentorPane.tsx` is rendered inside `MuseLayout` alongside the `<Outlet>`. It is a 320 px wide right-hand panel when expanded and a 48 px collapsed strip when closed. States: `idle → connecting → listening/speaking/processing → ended | error`. Auto-expands when a session becomes active; auto-scrolls transcript. Primary CTA: **"Walk me through {museName}"** (starts a Guided Tour and navigates to the Canvas); secondary **"or just chat"** for free-form Q&A. Uses the `useVoiceSession` hook, which also drives the Canvas tour via the shared `tourStore` (`features/canvas/tourStore.ts`).
+`frontend/src/features/voice/MentorPane.tsx` is rendered inside `MuseLayout` alongside the `<Outlet>`. It is a 320 px wide right-hand panel when expanded and a 48 px collapsed strip when closed. States: `idle → connecting → listening/speaking/processing → ended | error`. Auto-expands when a session becomes active; auto-scrolls transcript. The **idle state is a first-person chat greeting** ("I went and researched {Muse} for you… want me to walk you through it?", v0.4 chat-first entry); primary CTA **"Yes — walk me through it"** starts the voice Guided Tour, secondary **"I'll just read for now"** opens free chat. The voice only starts on the tap (browser gesture requirement — KD17 below). Uses the `useVoiceSession` hook, which also drives the Canvas tour via the shared `tourStore` (`features/canvas/tourStore.ts`).
 
-`TourPhase` in `tourStore`: `idle | intro | touring | detour | complete`. The `intro` phase plays before any Canvas section is highlighted — the Mentor delivers a spoken orientation (sources gathered, user intent, agenda) before the first section turn.
+`tourStore` state: `activeAnchorIds: string[]` (the Anchor ids the Mentor is narrating — drives highlight + scroll), `tourPhase`, and `pendingExplain` (the "Explain this" command bus consumed by `useVoiceSession`). `TourPhase`: `idle | intro | touring | detour | complete`. The `intro` phase plays before any Anchor is highlighted — the Mentor delivers a first-person spoken orientation (what it researched, sources gathered, page agenda) before the first Stop.
 
 ---
 
@@ -455,6 +460,15 @@ PRD: `docs/plans/v0.3/PRD-v0.3.2-voice-intro-and-canvas-flow.md`.
 - **`data_sources` section type** (10th section type): a responsive grid of source tiles showing type icon, title, domain, and a one-sentence snippet. Generated with actual resource data injected as context (not RAG), so sources are real. Frontend: `features/canvas/sections/DataSourcesSection.tsx`.
 - **Mentor opening intro**: before the first Canvas section, `TourController` dispatches a spoken orientation turn — user intent, sources gathered (count + titles + domains), and the tour agenda — woven into natural speech by Gemini. `build_tour_intro_text()` in `services/voice/context.py` builds the turn text. `tour_state: 'intro'` emitted during this phase; no Canvas section is highlighted until the intro completes.
 
+### Built (untagged) — v0.4 (Mentor-Authored, Free-Form Canvas)
+PRD: `docs/plans/v0.4/PRD-v0.4-mentor-authored-canvas.md`. The core move: **decouple page generation from teaching** — generate a free-form page first, then the Mentor *reads its own finished page* and authors the teaching plan (PRD §3, KD15 below).
+- **Free-form Canvas generation (M0.4.1)**: `planner.py` composes freely — no hero/takeaways spine, no fixed length — and emits a per-Muse `theme` (motif/hero_style/density/accent_treatment) + per-block `layout` (width/emphasis/columns). `generator.py` Phase A fills visual `data` only (**no narration**) and emits an **anchor map** per block. `MuseCanvas` gains `theme` + `walkthrough` columns (idempotent migrations in `models/database.py`).
+- **Free-form rendering (M0.4.2)**: `BlockRenderer` applies theme + layout; every section component stamps `data-anchor` ids matching the backend scheme; `GenericBlock` safe fallback for unknown kinds; two new editorial kinds `pull_quote` + `callout`. All treatments resolve to design tokens.
+- **Mentor Walkthrough Planner (M0.4.3 — Phase B)**: `services/canvas/walkthrough.py` `plan_walkthrough()` reads the finished page and authors `{stops:[{id, anchors, narration, intent}]}`, validating anchors against the page and falling back to one-stop-per-block. Runs as Phase B of the `canvas` job; persisted on `MuseCanvas.walkthrough`.
+- **Tour over the Plan (M0.4.4)**: `TourController` iterates **stops** (not sections), emits `canvas_focus {anchor_ids,…}` (extends/replaces `canvas_section`); frontend highlights the block + outlines sub-element anchors and scrolls. First-person tour system prompt. Detour/resume/jump preserved (`jump_anchor`).
+- **Mentor-owned entry + dynamic Explain This (M0.4.5)**: chat-first greeting → voice tour on tap; the static per-section "Explain this" button is replaced by a floating **`ExplainPopup`** driven by `useAnchorTarget` (click/selection → nearest `data-anchor`). Live session → `explain_anchor` (detour-style explain that re-anchors); no session → starts a tour at that anchor.
+- **Persona & polish (M0.4.6)**: first-person authorship copy across greeting / intro / narration / build stages; reduced-motion for the anchor highlight + sweep. **Audit not yet run** (deferred); end-to-end runtime verification on the live Gemini stack still pending.
+
 ### Next — Phase 2
 - Auth (single-user login)
 - Visual Explorer (knowledge graph)
@@ -527,6 +541,16 @@ PRD: `docs/plans/v0.3/PRD-v0.3.2-voice-intro-and-canvas-flow.md`.
 
 14. **Mentor opens every Guided Tour with a spoken orientation (v0.3.2).** Before the first Canvas section, `TourController` delivers a ~30–45 s unscripted intro: the user's learning intent, what sources were gathered, and the tour agenda. This is a separate `"intro"` phase — not part of any Canvas section. The Canvas highlight doesn't fire until the intro completes and `on_turn_complete` transitions to `"touring"`. Don't collapse the intro into the first section dispatch.
 
+15. **Decouple page generation from the teaching plan (v0.4).** Generation produces the visual page only (blocks + a fine-grained anchor map, **no narration**). A separate Phase B (`services/canvas/walkthrough.py`) has the Mentor *read the finished page* and author the Walkthrough Plan (ordered Stops → anchor refs + narration). This is what lets the page be fully free-form while the highlighted walkthrough stays deterministic (the Mentor highlights anchor ids it chose, never inferred from audio). Don't move narration back into generation.
+
+16. **"Fully generative" page = free composition over an extensible, themable block palette — NOT raw HTML (v0.4).** The AI composes blocks (kinds, order, layout, length, theme) with no template, but every block renders through a token-based component palette with a safe `GenericBlock` fallback. This keeps rendering total, on-brand, and — critically — finely anchorable. Don't switch to arbitrary generated markup (breaks anchoring + design-token fidelity).
+
+17. **Mentor entry is chat-first, then voice (v0.4, conservative by choice).** No forced autoplay. The pane opens with a first-person chat greeting + one CTA; the voice tour starts on the tap (the browser gesture audio/mic require). Reliable across browsers; the greeting still makes the Mentor feel like it's taking over.
+
+18. **"Explain this" is dynamic, not per-section (v0.4).** A floating popup (`ExplainPopup` + `useAnchorTarget`) appears at the click/selection and resolves to the nearest `data-anchor`, so the student can ask about the exact sentence/concept/event. The old static per-section "Explain this" button was removed. Frontend `data-anchor` ids MUST match the backend anchor scheme or resolution breaks.
+
+19. **The Walkthrough Plan is the Mentor's teaching spine (v0.4 — updates #10).** The Guided Tour follows the Mentor's authored Plan over the Canvas, dispatched **stop by stop** (highlighting each stop's anchors via `canvas_focus`), not the raw section list.
+
 ---
 
 ## Common Gotchas
@@ -540,5 +564,7 @@ PRD: `docs/plans/v0.3/PRD-v0.3.2-voice-intro-and-canvas-flow.md`.
 - **Audit process**: Before starting a new milestone, run a code audit using the template at `docs/plans/audit-template-and-process.md`. Fix P0 → P1 → P2 → P3 in order. Log findings in a dated file like `docs/plans/audit-YYYY-MM-DD.md`.
 - **Gemini audio streams faster than real time**: by the time a turn is a couple seconds in, its *entire* response may already be buffered. Anything that should track the spoken pace (transcript reveal, captions, progress) must be gated on `AudioContext.currentTime`/the play queue, never on message-arrival time or `setTimeout` (wall clock). See `useVoiceSession.ts` transcript pacing.
 - **Git identity**: commits use the global identity `mirantha <mj.jayathilaka@gmail.com>` (the email tied to the GitHub account). `gh` is the auth/credential helper. Push access is the `miranthajayatilake` account; don't confuse the gh login with the commit author email.
-- **Canvas section types** (10 total): `hero`, `prose`, `key_concepts`, `timeline`, `comparison`, `stat_band`, `resource_spotlight`, `data_sources`, `gaps`, `takeaways`. All defined in `backend/services/canvas/prompts.py:SECTION_SCHEMAS` and registered in `frontend/src/features/canvas/sections/index.ts`. Adding a new type requires both. The `data_sources` type receives the actual resource manifest as context (not RAG) — see `generator.py`.
+- **Canvas section types** (12 total, v0.4): `hero`, `prose`, `key_concepts`, `timeline`, `comparison`, `stat_band`, `resource_spotlight`, `data_sources`, `pull_quote`, `callout`, `gaps`, `takeaways`. All defined in `backend/services/canvas/prompts.py:SECTION_SCHEMAS` and registered in `frontend/src/features/canvas/sections/index.ts` (unknown kinds fall back to `GenericBlock`). Adding a new type requires both. The `data_sources` type receives the actual resource manifest as context (not RAG) — see `generator.py`.
+- **Anchor-scheme contract (v0.4)**: the backend `generator.py:_extract_anchors` and the frontend `data-anchor` stamping in each section component MUST agree exactly — block id `b{order}`, title `{id}.t`, single-body blocks `{id}.p0` (hero/pull_quote/callout), prose paragraphs `{id}.p{i}` (split on blank lines), and per-item prefixes `c/e/r/s/i/p` per type. The Walkthrough Plan references these ids and click-to-explain resolves against them — a mismatch silently breaks highlighting. Use the `anchor(section, suffix)` helper in `sections/types.ts`.
+- **Canvas generation produces NO narration (v0.4)**: blocks carry visual `data` + `layout` + `anchors` only. Narration lives in `MuseCanvas.walkthrough` (Phase B). The voice tour loads `load_walkthrough_stops()`; a Canvas with no plan (and no legacy section narration) falls back to free **chat** mode, not a broken tour.
 - **Canvas staleness polling**: the canvas query in `Overview.tsx` polls every 15 s when `status=ready` (not just when building) so the stale banner appears automatically after a KL rebuild, without requiring a page refresh. The `stale` field is computed server-side on every `GET /canvas` call.

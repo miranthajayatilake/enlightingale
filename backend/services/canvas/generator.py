@@ -1,9 +1,15 @@
-"""Canvas generator (arq job body).
+"""Canvas generator (arq job body) — v0.4 Phase A: compose the free-form page.
 
-Two-pass, mirroring the lesson generator: a planner picks the ordered section types,
-then each section is filled (data + narration) by a focused structured-output call and
-validated against its type schema. Invalid sections are dropped rather than failing the
-whole build. Fully wrapped in try/except with a DB failure path (the v0.1 P0 pattern).
+Two-pass: a planner composes the topic-tailored block sequence + theme freely (no
+mandatory spine, no fixed length), then each block's visual `data` is filled by a
+focused structured-output call and validated against its type schema. Each block also
+gets an anchor map (addressable sub-units) for the Mentor to highlight/explain later.
+
+Narration is NOT produced here. The Mentor authors a separate Walkthrough Plan after
+reading the finished page (PRD v0.4 §3, KD2) — that is Phase B (M0.4.3).
+
+Invalid blocks are dropped rather than failing the whole build. Fully wrapped in
+try/except with a DB failure path (the v0.1 P0 pattern).
 """
 
 import json
@@ -23,6 +29,7 @@ from models.resource import Resource
 from services.canvas.planner import _parse_json, plan_canvas
 from services.canvas.prompts import SECTION_SCHEMAS, build_section_prompt
 from services.canvas.signature import compute_source_signature
+from services.canvas.walkthrough import plan_walkthrough
 from core.claude import async_client
 from core.logging import logger
 
@@ -65,6 +72,37 @@ async def _fail(muse_id: str, job_id: str, message: str, redis: Redis) -> None:
     await _publish(redis, job_id, 0, message, status="failed")
 
 
+# Per-type addressable sub-units. Maps a `data` field to an anchor-id prefix; every
+# item in that field becomes "{block_id}.{prefix}{index}". The frontend stamps these
+# as `data-anchor` so the Mentor can highlight or be asked to explain a single element
+# (PRD v0.4 §6.2). The block id itself and its title (".t") are always anchors.
+_ANCHOR_UNITS: dict[str, tuple[str, str]] = {
+    "key_concepts": ("concepts", "c"),
+    "timeline": ("events", "e"),
+    "comparison": ("rows", "r"),
+    "stat_band": ("stats", "s"),
+    "resource_spotlight": ("items", "i"),
+    "data_sources": ("sources", "s"),
+    "gaps": ("items", "i"),
+    "takeaways": ("points", "p"),
+}
+
+
+def _extract_anchors(block_id: str, section_type: str, data: dict) -> list[str]:
+    anchors = [block_id, f"{block_id}.t"]
+    if section_type == "prose":
+        paras = [p for p in (data.get("markdown") or "").split("\n\n") if p.strip()]
+        anchors += [f"{block_id}.p{i}" for i in range(len(paras))]
+    elif section_type in ("hero", "pull_quote", "callout"):
+        anchors.append(f"{block_id}.p0")  # single-body block (essence / quote / callout body)
+    else:
+        field, prefix = _ANCHOR_UNITS.get(section_type, ("", ""))
+        items = data.get(field) if field else None
+        if isinstance(items, list):
+            anchors += [f"{block_id}.{prefix}{i}" for i in range(len(items))]
+    return anchors
+
+
 async def _generate_section(
     stub: dict, order: int, muse_name: str, level_note: str, context_block: str
 ) -> dict | None:
@@ -85,26 +123,27 @@ async def _generate_section(
     try:
         parsed = _parse_json(response.content[0].text)
     except (json.JSONDecodeError, ValueError):
-        logger.warning(f"Canvas section '{section_type}' returned unparseable JSON — dropping")
+        logger.warning(f"Canvas block '{section_type}' returned unparseable JSON — dropping")
         return None
 
     data = parsed.get("data")
-    narration = (parsed.get("narration") or "").strip()
-    if not isinstance(data, dict) or not narration:
-        logger.warning(f"Canvas section '{section_type}' missing data/narration — dropping")
+    if not isinstance(data, dict):
+        logger.warning(f"Canvas block '{section_type}' missing data — dropping")
         return None
 
     required = SECTION_SCHEMAS[section_type]["required"]
     if any(key not in data for key in required):
-        logger.warning(f"Canvas section '{section_type}' missing required keys {required} — dropping")
+        logger.warning(f"Canvas block '{section_type}' missing required keys {required} — dropping")
         return None
 
+    block_id = f"b{order}"
     return {
-        "id": f"sec_{order}_{section_type}",
+        "id": block_id,
         "type": section_type,
         "title": stub["title"],
-        "narration": narration,
+        "layout": stub.get("layout") or {"width": "full", "emphasis": "normal", "columns": 1},
         "data": data,
+        "anchors": _extract_anchors(block_id, section_type, data),
         "order": order,
     }
 
@@ -172,8 +211,8 @@ async def build_canvas(muse_id: str, job_id: str, redis_conn: Redis) -> None:
             *resource_lines[:20],
         ])
 
-        await _publish(redis_conn, job_id, 15, "Planning the presentation…")
-        outline = await plan_canvas(
+        await _publish(redis_conn, job_id, 15, "Designing your page…")
+        theme, outline = await plan_canvas(
             muse_name=muse_name,
             muse_description=muse_description,
             level_note=level_note,
@@ -224,27 +263,35 @@ async def build_canvas(muse_id: str, job_id: str, redis_conn: Redis) -> None:
             await _fail(muse_id, job_id, "No Canvas sections could be generated", redis_conn)
             return
 
+        # Phase B — the Mentor reads its finished page and authors the Walkthrough Plan.
+        await _publish(redis_conn, job_id, 92, "Reading it through and planning your walkthrough…")
+        walkthrough = await plan_walkthrough(muse_name, level_note, synthesis, sections)
+
         signature = compute_source_signature(muse_id)
         _mark_canvas(
             muse_id,
             sections=sections,
+            theme=theme,
+            walkthrough=walkthrough,
             status="ready",
             error=None,
             source_signature=signature,
             built_at=datetime.utcnow(),
         )
 
+        n_stops = len(walkthrough.get("stops", []))
+        done_msg = f"Canvas ready — {len(sections)} sections, {n_stops} walkthrough stops"
         with Session(engine) as session:
             job = session.get(BackgroundJob, job_id)
             if job:
                 job.status = "complete"
                 job.progress = 100
-                job.status_message = f"Canvas ready — {len(sections)} sections"
+                job.status_message = done_msg
                 job.completed_at = datetime.utcnow()
                 session.add(job)
                 session.commit()
 
-        await _publish(redis_conn, job_id, 100, f"Canvas ready — {len(sections)} sections", status="complete")
+        await _publish(redis_conn, job_id, 100, done_msg, status="complete")
 
     except Exception as exc:
         logger.exception("Canvas build failed")

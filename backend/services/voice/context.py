@@ -25,6 +25,26 @@ def load_canvas_sections(muse_id: str) -> list[dict]:
         return sorted(canvas.sections, key=lambda s: s.get("order", 0))
 
 
+def load_walkthrough_stops(muse_id: str) -> list[dict]:
+    """Return the Mentor's Walkthrough Plan stops (v0.4 Phase B) — the spine the Guided
+    Tour follows: [{id, anchors, narration, intent}]. Falls back to legacy per-section
+    narration for Canvases built before v0.4 (which carried narration on the sections)."""
+    with Session(engine) as db:
+        canvas = db.get(MuseCanvas, muse_id)
+        if not canvas or canvas.status != "ready":
+            return []
+        stops = (canvas.walkthrough or {}).get("stops") or []
+        if stops:
+            return stops
+        # Legacy fallback: synthesise one stop per narrated section.
+        sections = sorted(canvas.sections or [], key=lambda s: s.get("order", 0))
+        return [
+            {"id": f"stop_{i}", "anchors": [s.get("id")], "narration": (s.get("narration") or "").strip(), "intent": ""}
+            for i, s in enumerate(sections)
+            if (s.get("narration") or "").strip()
+        ]
+
+
 def build_tour_intro_text(muse_id: str, sections: list[dict]) -> str:
     """Build the user-turn text for the Mentor's opening orientation.
     Sent as the first Gemini turn before any Canvas section is dispatched."""
@@ -69,23 +89,24 @@ def build_tour_intro_text(muse_id: str, sections: list[dict]) -> str:
     agenda_block = "\n".join(agenda_lines)
 
     return (
-        "Deliver a warm, spoken orientation before the guided tour begins. "
-        "Do NOT read lists aloud — weave all of this into natural, flowing, enthusiastic speech. "
-        "Cover these three things:\n\n"
-        f"1. The student wanted to learn about: {intent}\n\n"
-        f"2. What was gathered — {n_sources} source{'s' if n_sources != 1 else ''} researched:\n{sources_block}\n\n"
-        f"3. The tour agenda — what we'll cover in order:\n{agenda_block}\n\n"
-        "Aim for about 30 to 45 seconds of spoken time. "
-        "Make the student feel like you have done thorough research for them and are genuinely excited to walk them through it. "
-        "End naturally — something like 'Let's get into it' or 'Let's dive in.' — "
-        "then stop. I will hand you the first section."
+        "Deliver a warm, spoken orientation before your guided tour begins. You personally "
+        "researched this topic and built the page on the student's screen — speak as its author, "
+        "in the first person. Do NOT read lists aloud — weave all of this into natural, flowing, "
+        "enthusiastic speech. Cover three things:\n\n"
+        f"1. What the student wanted to learn: {intent}\n\n"
+        f"2. The sources you went and gathered for them — {n_sources} source{'s' if n_sources != 1 else ''}:\n{sources_block}\n\n"
+        f"3. How you've laid out the page — what you'll walk through, in order:\n{agenda_block}\n\n"
+        "Aim for about 30 to 45 seconds. Make it clear that you did this research and built this "
+        "page for them, and that you're genuinely excited to walk them through it. "
+        "End naturally — something like 'Let's dive in.' — then stop. I'll hand you the first stop."
     )
 
 
 def build_tour_system_prompt(muse_id: str, sections: list[dict]) -> str:
-    """System prompt for a Guided Tour: the Mentor narrates the on-screen Canvas
-    section by section. The backend hands it one section at a time (see TourController);
-    this prompt sets the framing and gives the full ordered list as context."""
+    """System prompt for a Guided Tour. The Mentor speaks as the author of the on-screen
+    page (it researched the topic and composed the page). The backend hands it one
+    Walkthrough Plan stop at a time (see TourController); this prompt sets the framing and
+    gives the page outline (block titles) as context."""
     with Session(engine) as db:
         muse = db.get(Muse, muse_id)
 
@@ -93,38 +114,35 @@ def build_tour_system_prompt(muse_id: str, sections: list[dict]) -> str:
     knowledge_level = (muse.knowledge_level if muse else None) or "beginner"
     level_note = _LEVEL_NOTE.get(knowledge_level, _LEVEL_NOTE["beginner"])
 
-    section_lines = []
-    for i, s in enumerate(sections):
-        title = s.get("title", f"Section {i + 1}")
-        narration = (s.get("narration") or "").strip()
-        section_lines.append(f"{i + 1}. {title}\n   {narration}")
-    section_block = "\n\n".join(section_lines)
+    outline = "\n".join(
+        f"{i + 1}. {s.get('title', f'Section {i + 1}')}" for i, s in enumerate(sections)
+    )
 
     parts = [
-        f'You are Mentor, an expert voice teacher giving a guided tour of an on-screen visual presentation about "{muse_name}".',
+        f'You are Mentor, an expert voice teacher. You personally researched "{muse_name}" and composed the visual page on the student\'s screen — speak as its author and the student\'s guide, in the first person ("I pulled this together…", "I laid it out so that…").',
         "",
         f"Student level: {level_note}",
         "",
         "═══ HOW THE GUIDED TOUR WORKS ═══",
         "",
-        "There is a visual presentation on the student's screen, made of sections. I (the system) will hand you ONE section at a time and tell you to present it.",
-        "Your job each turn: present the section I just handed you, in your own warm, flowing words. Expand on it, make it vivid with examples and analogies — but STAY ON THAT SECTION. Do NOT jump ahead to later sections; I will bring you there.",
-        "When I hand you the next section, open with a brief, natural bridge from what you just covered, then dive in.",
+        "The page you built is on the student's screen. I (the system) will hand you ONE stop at a time and tell you exactly what to say there; the matching part of the page is highlighted as you speak.",
+        "Each turn: say what I hand you, in your own warm, flowing words — expand on it, make it vivid with examples and analogies — but STAY on that stop. Do NOT jump ahead; I will bring you to the next stop.",
+        "Open each new stop with a brief, natural bridge from what you just said.",
         "",
         "CORE RULES:",
-        "1. Speak in natural, flowing paragraphs — 3 to 6 sentences per section. Never one-liners.",
+        "1. Speak in natural, flowing paragraphs — 3 to 6 sentences per stop. Never one-liners.",
         "2. Never use bullet points, numbered lists, markdown, or any formatting — you are speaking aloud.",
-        "3. Never ask the student what they want to learn or whether to continue. Just teach, section by section.",
+        "3. Never ask the student what they want to learn or whether to continue. Just teach, stop by stop.",
         "4. If the student asks a question, answer it fully and warmly, then I will guide you back to the tour.",
         "5. Be authoritative, warm, and a little infectious in your enthusiasm — the best podcast host on this subject.",
         "",
-        "For context, here is the full presentation you will walk through, in order (do not read this list aloud — I will hand you each section when it's time):",
+        "For context, here is the page you built, in order (do not read this list aloud):",
         "",
-        section_block,
+        outline,
         "",
-        "I will first send you an orientation turn with the student's learning goal, the sources gathered, and a preview of the sections ahead. "
-        "Deliver that as a warm spoken opening — not as a list read aloud, but woven into natural, flowing sentences. "
-        "When the orientation is done, I will hand you the sections one at a time. Transition naturally into each one.",
+        "I will first send you an orientation turn with the student's goal, the sources you gathered, and a preview of the page. "
+        "Deliver that as a warm spoken opening — woven into natural, flowing sentences, not a list. "
+        "When the orientation is done, I will hand you the stops one at a time. Transition naturally into each one.",
     ]
     return "\n".join(parts)
 

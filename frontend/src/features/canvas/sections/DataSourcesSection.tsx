@@ -1,4 +1,4 @@
-import { data, type SectionProps } from './types'
+import { anchor, data, type SectionProps } from './types'
 
 const TYPE_ICON: Record<string, string> = {
   url:  '🔗',
@@ -23,7 +23,7 @@ export function DataSourcesSection({ section }: SectionProps) {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-ink mb-1">{section.title}</h2>
+      <h2 data-anchor={anchor(section, 't')} className="text-lg font-semibold text-ink mb-1">{section.title}</h2>
       {summary && (
         <p className="text-sm text-ink-secondary mb-4">{summary}</p>
       )}
@@ -31,6 +31,7 @@ export function DataSourcesSection({ section }: SectionProps) {
         {sources.map((source, i) => (
           <div
             key={i}
+            data-anchor={anchor(section, `s${i}`)}
             className="flex gap-3 rounded-lg bg-cream border border-border px-4 py-3"
           >
             <span className="text-xl shrink-0 mt-0.5 leading-none">

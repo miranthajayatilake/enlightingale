@@ -1,4 +1,4 @@
-import { data, type SectionProps } from './types'
+import { anchor, data, type SectionProps } from './types'
 
 interface ComparisonRow {
   label: string
@@ -16,7 +16,7 @@ export function ComparisonSection({ section }: SectionProps) {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-ink mb-4">{section.title}</h2>
+      <h2 data-anchor={anchor(section, 't')} className="text-lg font-semibold text-ink mb-4">{section.title}</h2>
       <div className="overflow-hidden rounded-lg border border-border">
         <div className="grid grid-cols-[1fr_1.5fr_1.5fr]">
           {/* header */}
@@ -30,11 +30,11 @@ export function ComparisonSection({ section }: SectionProps) {
           {/* rows */}
           {rows.map((r, i) => (
             <div key={i} className="contents">
-              <div className="px-4 py-3 border-b border-border text-sm font-medium text-ink-secondary">
+              <div data-anchor={anchor(section, `r${i}`)} className="px-4 py-3 border-b border-border text-sm font-medium text-ink-secondary">
                 {r.label}
               </div>
-              <div className="px-4 py-3 border-b border-l border-border text-sm text-ink">{r.a}</div>
-              <div className="px-4 py-3 border-b border-l border-border text-sm text-ink">{r.b}</div>
+              <div data-anchor={anchor(section, `r${i}`)} className="px-4 py-3 border-b border-l border-border text-sm text-ink">{r.a}</div>
+              <div data-anchor={anchor(section, `r${i}`)} className="px-4 py-3 border-b border-l border-border text-sm text-ink">{r.b}</div>
             </div>
           ))}
         </div>

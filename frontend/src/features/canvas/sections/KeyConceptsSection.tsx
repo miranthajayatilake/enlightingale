@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { data, type SectionProps } from './types'
+import { anchor, data, type SectionProps } from './types'
 
 interface Concept {
   term: string
@@ -19,7 +19,7 @@ export function KeyConceptsSection({ section }: SectionProps) {
   if (concepts.length === 0) {
     return (
       <div>
-        <h2 className="text-lg font-semibold text-ink mb-3">{section.title}</h2>
+        <h2 data-anchor={anchor(section, 't')} className="text-lg font-semibold text-ink mb-3">{section.title}</h2>
       </div>
     )
   }
@@ -40,7 +40,7 @@ export function KeyConceptsSection({ section }: SectionProps) {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-ink mb-4">{section.title}</h2>
+      <h2 data-anchor={anchor(section, 't')} className="text-lg font-semibold text-ink mb-4">{section.title}</h2>
 
       <div className="relative w-full" style={{ height: 320 }}>
         <svg className="absolute inset-0 w-full h-full text-accent/30" aria-hidden>
@@ -69,6 +69,7 @@ export function KeyConceptsSection({ section }: SectionProps) {
         {ring.map((c, i) => (
           <button
             key={c.term}
+            data-anchor={anchor(section, `c${i}`)}
             onClick={() => setSelected(i)}
             className={cn(
               'absolute -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors max-w-[40%] truncate',
@@ -98,6 +99,7 @@ export function KeyConceptsSection({ section }: SectionProps) {
           {overflow.map((c, i) => (
             <button
               key={c.term}
+              data-anchor={anchor(section, `c${8 + i}`)}
               onClick={() => setSelected(8 + i)}
               className={cn(
                 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',

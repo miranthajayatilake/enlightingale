@@ -16,26 +16,26 @@ interface Stage {
 
 const RESEARCH_STAGE: Stage = {
   id: 'research',
-  label: 'Searching the web',
-  detail: 'Scouting and curating the best sources.',
+  label: 'Researching the web',
+  detail: "I'm scouting and curating the best sources.",
 }
 
 const SOURCES_STAGE: Stage = {
   id: 'sources',
-  label: 'Reading your sources',
-  detail: 'Fetching, scraping, and summarising everything collected.',
+  label: 'Reading the sources',
+  detail: "I'm reading through everything I gathered.",
 }
 
 const KNOWLEDGE_STAGE: Stage = {
   id: 'knowledge',
-  label: 'Building your knowledge layer',
-  detail: 'Synthesising insights, extracting concepts, finding gaps.',
+  label: 'Making sense of it all',
+  detail: "I'm synthesising the ideas, concepts, and open questions.",
 }
 
 const CANVAS_STAGE: Stage = {
   id: 'canvas',
-  label: 'Composing your Canvas',
-  detail: 'Planning and writing each section of your visual overview.',
+  label: 'Building your page',
+  detail: "I'm laying out your page, then planning how I'll walk you through it.",
 }
 
 const ORDER = ['research', 'sources', 'knowledge', 'canvas'] as const
@@ -175,16 +175,16 @@ export function CanvasBuildStages({ muse, klStatus, canvasStatus: _canvasStatus,
         {/* Warm message */}
         <p className="mt-5 pt-4 border-t border-border text-xs text-ink-muted leading-relaxed">
           {activeStage.id === 'research' && (
-            <>Scouting the web for the best sources on <strong className="text-ink-secondary">{muse.name}</strong>…</>
+            <>I'm scouting the web for the best sources on <strong className="text-ink-secondary">{muse.name}</strong>…</>
           )}
           {activeStage.id === 'sources' && (
-            <>Making sense of everything collected about <strong className="text-ink-secondary">{muse.name}</strong>.</>
+            <>I'm making sense of everything I gathered about <strong className="text-ink-secondary">{muse.name}</strong>.</>
           )}
           {activeStage.id === 'knowledge' && (
-            <>Your Mentor is learning about <strong className="text-ink-secondary">{muse.name}</strong>. Sit tight — a rich Canvas is on the way.</>
+            <>I'm building up my understanding of <strong className="text-ink-secondary">{muse.name}</strong>. Sit tight — your page is on the way.</>
           )}
           {activeStage.id === 'canvas' && (
-            <>Almost there. Writing your visual overview and preparing your Mentor for a guided tour.</>
+            <>Almost there — I'm laying out your page and getting ready to walk you through it.</>
           )}
         </p>
       </div>

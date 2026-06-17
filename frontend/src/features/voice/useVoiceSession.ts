@@ -185,15 +185,20 @@ export function useVoiceSession(museId: string): VoiceSession {
   }, [beginTurn])
 
   const handleMessage = useCallback(
-    (msg: { type: string; value?: string; role?: string; text?: string; data?: string; message?: string; id?: string }) => {
+    (msg: { type: string; value?: string; role?: string; text?: string; data?: string; message?: string; id?: string; anchor_ids?: string[] }) => {
       switch (msg.type) {
         case 'ready':
           setStatus('listening')
           break
 
+        case 'canvas_focus':
+          // Backend tells us which anchor(s) the Mentor is now narrating (v0.4).
+          if (Array.isArray(msg.anchor_ids)) useTourStore.getState().setActiveAnchors(msg.anchor_ids)
+          break
+
         case 'canvas_section':
-          // Backend tells us which Canvas section the Mentor is now narrating.
-          if (msg.id) useTourStore.getState().setActiveSection(msg.id)
+          // Legacy alias (pre-v0.4): a whole-section highlight by id.
+          if (msg.id) useTourStore.getState().setActiveAnchors([msg.id])
           break
 
         case 'tour_state':
@@ -356,22 +361,22 @@ export function useVoiceSession(museId: string): VoiceSession {
 
   useEffect(() => () => { cleanup() }, [cleanup])
 
-  // Consume click-to-jump requests from the Canvas. If a session is live, jump within it
-  // (stop current audio, then ask the backend to narrate that section); otherwise start a
-  // fresh tour positioned at the clicked section.
-  const pendingJump = useTourStore((s) => s.pendingJump)
+  // Consume "Explain this" requests from the Canvas. If a session is live, ask the Mentor to
+  // explain that anchor (stop current audio, then a detour-style explain turn that re-anchors
+  // afterwards); otherwise start a fresh tour positioned at the clicked anchor.
+  const pendingExplain = useTourStore((s) => s.pendingExplain)
   useEffect(() => {
-    if (!pendingJump) return
-    const { id } = pendingJump
-    useTourStore.getState().clearJump()
+    if (!pendingExplain) return
+    const { anchorId, selectedText } = pendingExplain
+    useTourStore.getState().clearExplain()
     const ws = wsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
       stopAllAudio()
-      ws.send(JSON.stringify({ type: 'jump_section', id }))
+      ws.send(JSON.stringify({ type: 'explain_anchor', anchor_id: anchorId, selected_text: selectedText }))
     } else {
-      void start('tour', id)
+      void start('tour', anchorId)
     }
-  }, [pendingJump, start, stopAllAudio])
+  }, [pendingExplain, start, stopAllAudio])
 
   const toggleMute = useCallback(() => setIsMuted((m) => !m), [])
 

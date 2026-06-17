@@ -1,4 +1,4 @@
-import { data, type SectionProps } from './types'
+import { anchor, data, type SectionProps } from './types'
 
 interface TimelineEvent {
   when: string
@@ -14,13 +14,13 @@ export function TimelineSection({ section }: SectionProps) {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-ink mb-5">{section.title}</h2>
+      <h2 data-anchor={anchor(section, 't')} className="text-lg font-semibold text-ink mb-5">{section.title}</h2>
       <div className="relative pl-6">
         {/* vertical line */}
         <div className="absolute left-[7px] top-1 bottom-1 w-px bg-border" />
         <div className="space-y-6">
           {events.map((e, i) => (
-            <div key={i} className="relative">
+            <div key={i} data-anchor={anchor(section, `e${i}`)} className="relative">
               <div className="absolute -left-6 top-1 w-3.5 h-3.5 rounded-full bg-accent border-2 border-surface" />
               <p className="text-xs font-semibold text-accent uppercase tracking-wide">{e.when}</p>
               <p className="text-sm font-medium text-ink mt-0.5">{e.label}</p>

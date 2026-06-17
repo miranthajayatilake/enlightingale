@@ -118,22 +118,40 @@ export type CanvasSectionType =
   | 'stat_band'
   | 'resource_spotlight'
   | 'data_sources'
+  | 'pull_quote'
+  | 'callout'
   | 'gaps'
   | 'takeaways'
+
+export interface CanvasLayout {
+  width: 'full' | 'wide' | 'half'
+  emphasis: 'lead' | 'normal' | 'aside'
+  columns: 1 | 2
+}
+
+export interface CanvasTheme {
+  motif: string
+  hero_style: 'bold' | 'quiet' | 'editorial'
+  density: 'airy' | 'balanced' | 'dense'
+  accent_treatment: 'wash' | 'rule' | 'none'
+}
 
 export interface CanvasSection {
   id: string
   type: CanvasSectionType
   title: string
-  narration: string
+  layout?: CanvasLayout
   // Shape depends on `type` — see backend services/canvas/prompts.py SECTION_SCHEMAS
   data: Record<string, unknown>
+  anchors?: string[]            // addressable sub-unit ids the Mentor can highlight/explain (v0.4)
   order: number
+  narration?: string            // legacy; empty for v0.4 canvases (narration now lives in the Walkthrough Plan)
 }
 
 export interface MuseCanvas {
   muse_id: string
   sections: CanvasSection[]
+  theme?: CanvasTheme
   status: 'idle' | 'building' | 'ready' | 'stale' | 'failed'
   error: string | null
   source_signature: string

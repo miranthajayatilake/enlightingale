@@ -10,8 +10,9 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-# Controlled block-type vocabulary (v0.2 M0.2.1). The frontend renders one
-# component per type; the generator may only emit these.
+# Block-type palette the planner composes from (v0.4). The frontend renders one
+# component per type and falls back to prose for anything unknown, so this set is
+# guidance for generation, not a hard rendering constraint.
 CANVAS_SECTION_TYPES = {
     "hero",
     "prose",
@@ -20,21 +21,26 @@ CANVAS_SECTION_TYPES = {
     "comparison",
     "stat_band",
     "resource_spotlight",
+    "data_sources",
     "gaps",
     "takeaways",
 }
 
 
 class CanvasSection(BaseModel):
-    """One typed block in the Canvas. Carries visual `data` AND a spoken `narration`
-    script — the separation is what keeps the page and the Mentor's voice in sync."""
+    """One block in the free-form Canvas (v0.4). Carries visual `data`, a `layout`
+    hint, and the `anchors` (addressable sub-units) the Mentor can highlight or be
+    asked to explain. Narration is no longer baked in here — it lives in the
+    Walkthrough Plan, authored after the page exists (see PRD v0.4 §3, KD2)."""
 
     id: str
     type: str
     title: str
-    narration: str        # what the Mentor speaks for this section; plain spoken language, no markdown
-    data: dict            # shape depends on `type`
+    layout: dict = {}            # {width, emphasis, columns} — visual rhythm
+    data: dict = {}              # shape depends on `type`
+    anchors: list[str] = []      # addressable ids within this block (block id + sub-ids)
     order: int
+    narration: str = ""          # legacy; empty for v0.4 canvases
 
 
 class MuseCanvas(SQLModel, table=True):
@@ -42,6 +48,8 @@ class MuseCanvas(SQLModel, table=True):
 
     muse_id: str = Field(primary_key=True, foreign_key="muses.id")
     sections: list = Field(default_factory=list, sa_column=Column(JSON))  # list[CanvasSection dict]
+    theme: dict = Field(default_factory=dict, sa_column=Column(JSON))     # per-Muse visual theme (v0.4)
+    walkthrough: dict = Field(default_factory=dict, sa_column=Column(JSON))  # Mentor's Walkthrough Plan {stops:[...]} (v0.4 Phase B)
     status: str = "idle"            # idle | building | ready | stale | failed
     error: Optional[str] = None
     source_signature: str = ""      # fingerprint of inputs at build time; drives staleness
@@ -51,6 +59,8 @@ class MuseCanvas(SQLModel, table=True):
 class MuseCanvasRead(SQLModel):
     muse_id: str
     sections: list
+    theme: dict = {}
+    walkthrough: dict = {}
     status: str
     error: Optional[str]
     source_signature: str

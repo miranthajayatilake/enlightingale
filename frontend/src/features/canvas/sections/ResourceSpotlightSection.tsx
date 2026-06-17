@@ -1,4 +1,4 @@
-import { data, type SectionProps } from './types'
+import { anchor, data, type SectionProps } from './types'
 
 interface SpotlightItem {
   resource_id?: string
@@ -14,10 +14,10 @@ export function ResourceSpotlightSection({ section }: SectionProps) {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-ink mb-4">{section.title}</h2>
+      <h2 data-anchor={anchor(section, 't')} className="text-lg font-semibold text-ink mb-4">{section.title}</h2>
       <div className="space-y-3">
         {items.map((item, i) => (
-          <div key={i} className="flex gap-3 rounded-lg bg-cream border border-border px-4 py-3">
+          <div key={i} data-anchor={anchor(section, `i${i}`)} className="flex gap-3 rounded-lg bg-cream border border-border px-4 py-3">
             <span className="text-accent text-lg leading-none mt-0.5">📄</span>
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink leading-snug">{item.title}</p>

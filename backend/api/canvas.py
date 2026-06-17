@@ -35,6 +35,8 @@ def get_canvas(muse_id: str, session: Session = Depends(get_session)):
     return MuseCanvasRead(
         muse_id=canvas.muse_id,
         sections=canvas.sections,
+        theme=canvas.theme or {},
+        walkthrough=canvas.walkthrough or {},
         status=canvas.status,
         error=canvas.error,
         source_signature=canvas.source_signature,

@@ -77,6 +77,19 @@ body {
   }
 }
 
+/* Element-level highlight for the anchor the Mentor is narrating during a Guided Tour. */
+.canvas-anchor-active {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-md);
+  transition: outline-color 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-anchor-active { transition: none; }
+  .animate-build-sweep { animation: none; }
+}
+
 @keyframes build-sweep {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }

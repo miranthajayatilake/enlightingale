@@ -1,17 +1,19 @@
-"""Guided Tour coordinator.
+"""Guided Tour coordinator (v0.4 — drives the Mentor's Walkthrough Plan).
 
-The backend owns the tour cursor and hands Gemini ONE Canvas section at a time,
-emitting the `canvas_section` highlight event in lockstep with the audio it is about
-to produce. Because the backend decides section boundaries, the on-screen highlight is
-deterministic — never inferred from the audio/transcript (see PRD §7.1).
+The backend owns the tour cursor and hands Gemini ONE Walkthrough Plan *stop* at a time,
+emitting the `canvas_focus` event (the stop's anchor ids) in lockstep with the audio it is
+about to produce. Because the backend decides stop boundaries, the on-screen highlight is
+deterministic — never inferred from the audio/transcript (PRD v0.4 §6.2, KD2). A stop may
+highlight a whole block or a single element (e.g. one timeline event), so highlights can be
+finer-grained than the old per-section model.
 
-Detour / resume (M0.2.4): when the student barges in with a question, Gemini emits
-`interrupted` and we enter the `detour` phase (the frontend dims the active section to
-"paused"). The Mentor answers freely; the cursor does NOT advance. We detect that the
-answer has finished — rather than the cut-off section turn finalizing — by waiting for a
-`turn_complete` that arrives AFTER the model produced fresh audio while in detour. Then we
-re-anchor: re-emit `canvas_section` for the current cursor and dispatch a "brief recap, then
-continue this section" instruction. Click-to-jump repositions the cursor to any section.
+Detour / resume: when the student barges in with a question, Gemini emits `interrupted` and
+we enter the `detour` phase (the frontend dims the active highlight). The Mentor answers
+freely; the cursor does NOT advance. We detect the answer has finished — rather than the
+cut-off stop turn finalizing — by waiting for a `turn_complete` that arrives AFTER the model
+produced fresh audio while in detour. Then we re-anchor: re-emit `canvas_focus` for the
+current stop and dispatch a "brief recap, then continue" instruction. Click-to-jump
+repositions the cursor to the stop matching the clicked anchor.
 """
 
 from typing import Optional
@@ -21,10 +23,10 @@ from google.genai import types as gtypes
 
 
 class TourController:
-    def __init__(self, websocket: WebSocket, gemini_session, sections: list[dict], intro_text: Optional[str] = None):
+    def __init__(self, websocket: WebSocket, gemini_session, stops: list[dict], intro_text: Optional[str] = None):
         self.ws = websocket
         self.gs = gemini_session
-        self.sections = sections
+        self.stops = stops
         self.intro_text = intro_text
         self.cursor = 0
         self.phase = "intro" if intro_text else "touring"   # intro | touring | detour | complete
@@ -32,31 +34,40 @@ class TourController:
         self.detour_answer_started = False  # model produced audio since entering detour
         # A jump interrupts Gemini's current turn via realtime input. That self-induced
         # interrupt produces an `interrupted` event and a `turn_complete` for the abandoned
-        # turn — both must be ignored (they are not a user barge-in nor a finished section).
+        # turn — both must be ignored (they are not a user barge-in nor a finished stop).
         self._ignore_next_interrupt = False
         self._ignore_turn_completes = 0
 
-    def _index_of(self, section_id: str) -> Optional[int]:
-        return next((i for i, s in enumerate(self.sections) if s["id"] == section_id), None)
+    def _stop_for_anchor(self, anchor_id: str) -> Optional[int]:
+        """Map a clicked anchor id to the stop that covers it: an exact anchor match first,
+        then any stop in the same block (anchor ids are `{block}.{unit}`)."""
+        for i, s in enumerate(self.stops):
+            if anchor_id in (s.get("anchors") or []):
+                return i
+        block = anchor_id.split(".")[0]
+        for i, s in enumerate(self.stops):
+            if any((a or "").split(".")[0] == block for a in (s.get("anchors") or [])):
+                return i
+        return None
 
-    async def begin(self, start_section_id: Optional[str] = None) -> None:
-        start = self._index_of(start_section_id) if start_section_id else 0
+    async def begin(self, start_anchor_id: Optional[str] = None) -> None:
+        start = self._stop_for_anchor(start_anchor_id) if start_anchor_id else 0
         self.cursor = start if start is not None else 0
         if self.intro_text:
-            # Intro plays before section 0 — no canvas highlight yet.
+            # Intro plays before the first stop — no canvas highlight yet.
             await self.ws.send_json({"type": "tour_state", "value": "intro"})
             await self._send(self.intro_text)
         else:
-            await self._emit_section()
+            await self._emit_focus()
             await self._dispatch(kind="first")
 
-    async def _emit_section(self) -> None:
-        section = self.sections[self.cursor]
+    async def _emit_focus(self) -> None:
+        stop = self.stops[self.cursor]
         await self.ws.send_json({
-            "type": "canvas_section",
-            "id": section["id"],
+            "type": "canvas_focus",
+            "anchor_ids": stop.get("anchors") or [],
             "index": self.cursor,
-            "total": len(self.sections),
+            "total": len(self.stops),
         })
         await self.ws.send_json({"type": "tour_state", "value": "touring"})
 
@@ -69,39 +80,35 @@ class TourController:
     async def _interrupt(self) -> None:
         """Stop Gemini's in-progress turn. `send_client_content` does NOT interrupt an
         active turn, but realtime input does — so we use it to cut off the current
-        narration before dispatching a new section (used by jump)."""
-        await self.gs.send_realtime_input(text="(The student jumped to a different section.)")
+        narration before dispatching a new stop (used by jump)."""
+        await self.gs.send_realtime_input(text="(The student jumped to a different part of the page.)")
 
     async def _dispatch(self, kind: str = "next") -> None:
-        section = self.sections[self.cursor]
-        title = section.get("title", "")
-        narration = (section.get("narration") or "").strip()
+        stop = self.stops[self.cursor]
+        narration = (stop.get("narration") or "").strip()
         if kind == "first":
             text = (
                 "Begin the guided tour now. Greet the student in one warm sentence that "
-                f'names the topic, then present this first section, titled "{title}". '
-                f"Cover this:\n\n{narration}"
+                "names the topic, then say this, in your own voice:\n\n" + narration
             )
         elif kind == "first_after_intro":
             text = (
-                f'The orientation is complete. Now flow naturally into the first section, titled "{title}". '
-                f"No need to re-introduce the topic — just transition smoothly and present:\n\n{narration}"
+                "The orientation is complete. Now begin the walkthrough — flow naturally in "
+                "and say this:\n\n" + narration
             )
         elif kind == "resume":
             text = (
-                "The student's question is fully answered. In one short sentence, recap where "
-                f'we were in the section titled "{title}", then continue and finish presenting it:'
-                f"\n\n{narration}"
+                "The student's question is fully answered. In one short sentence, pick up "
+                "where you left off, then continue and say this:\n\n" + narration
             )
         elif kind == "jump":
             text = (
-                f'The student has jumped to the section titled "{title}". Go there now and '
-                f"present it from the top:\n\n{narration}"
+                "The student jumped to this part of the page. Go there now and say this:\n\n" + narration
             )
         else:
             text = (
-                f'Now move on to the next section, titled "{title}". Bridge smoothly from '
-                f"what you just covered, then present this:\n\n{narration}"
+                "Move on to the next stop. Bridge smoothly from what you just covered, then "
+                "say this:\n\n" + narration
             )
         self.saw_user_input_this_turn = False
         await self._send(text)
@@ -137,15 +144,15 @@ class TourController:
             return
 
         if self.phase == "intro":
-            # Orientation finished — start the actual tour at section 0.
+            # Orientation finished — start the actual walkthrough at the first stop.
             self.phase = "touring"
-            await self._emit_section()
+            await self._emit_focus()
             await self._dispatch(kind="first_after_intro")
             return
 
         if self.phase == "detour":
             # Resume only once the answer has actually played (not on the cut-off
-            # section turn finalizing). Otherwise keep waiting.
+            # stop turn finalizing). Otherwise keep waiting.
             if self.detour_answer_started:
                 await self._resume()
             return
@@ -165,34 +172,58 @@ class TourController:
 
     async def _advance(self) -> None:
         self.cursor += 1
-        if self.cursor >= len(self.sections):
+        if self.cursor >= len(self.stops):
             self.phase = "complete"
             await self.ws.send_json({"type": "tour_state", "value": "complete"})
             await self._send(
-                "That was the final section. Give a brief, warm closing — one or two "
+                "That was the final stop. Give a brief, warm closing — one or two "
                 "sentences — wrapping up the tour. Do not start a new topic."
             )
             return
-        await self._emit_section()
+        await self._emit_focus()
         await self._dispatch(kind="next")
 
     async def _resume(self) -> None:
         self.phase = "touring"
         self.detour_answer_started = False
-        await self._emit_section()
+        await self._emit_focus()
         await self._dispatch(kind="resume")
 
-    async def jump_to(self, section_id: str) -> None:
-        idx = self._index_of(section_id)
+    async def jump_to_anchor(self, anchor_id: str) -> None:
+        idx = self._stop_for_anchor(anchor_id)
         if idx is None:
             return
         self.phase = "touring"
         self.detour_answer_started = False
         self.cursor = idx
-        # Cut off whatever Gemini is currently narrating, then present the new section.
+        # Cut off whatever Gemini is currently narrating, then present the new stop.
         # The self-induced interrupt yields one `interrupted` + one `turn_complete` to ignore.
         self._ignore_next_interrupt = True
         self._ignore_turn_completes += 1
         await self._interrupt()
-        await self._emit_section()
+        await self._emit_focus()
         await self._dispatch(kind="jump")
+
+    async def explain(self, anchor_id: str, selected_text: Optional[str] = None) -> None:
+        """The student pointed at a specific spot and asked the Mentor to explain it.
+        Modelled as a user-initiated detour: highlight exactly what they pointed at, explain
+        just that, then re-anchor to the current stop (the cursor does NOT move)."""
+        self.phase = "detour"
+        self.detour_answer_started = False
+        # Cut off the current narration (same self-induced-interrupt bookkeeping as a jump).
+        self._ignore_next_interrupt = True
+        self._ignore_turn_completes += 1
+        await self._interrupt()
+        # Highlight exactly the clicked anchor while answering.
+        await self.ws.send_json({
+            "type": "canvas_focus",
+            "anchor_ids": [anchor_id],
+            "index": self.cursor,
+            "total": len(self.stops),
+        })
+        await self.ws.send_json({"type": "tour_state", "value": "detour"})
+        focus = f' Focus specifically on: "{selected_text.strip()}".' if selected_text and selected_text.strip() else ""
+        await self._send(
+            "The student pointed at this part of the page and asked you to explain it. "
+            f"Explain just this, warmly and concretely.{focus} Then stop — I'll bring you back to the tour."
+        )

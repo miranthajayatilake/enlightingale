@@ -20,7 +20,13 @@ from sqlmodel import Session
 from core.config import settings
 from models.database import get_session
 from models.muse import Muse
-from services.voice.context import build_system_prompt, build_tour_intro_text, build_tour_system_prompt, load_canvas_sections
+from services.voice.context import (
+    build_system_prompt,
+    build_tour_intro_text,
+    build_tour_system_prompt,
+    load_canvas_sections,
+    load_walkthrough_stops,
+)
 from services.voice.tour import TourController
 
 router     = APIRouter(prefix="/muses/{muse_id}/voice", tags=["voice"])
@@ -99,9 +105,10 @@ async def voice_proxy(websocket: WebSocket, session_id: str) -> None:
     muse_id = session_data["muse_id"]
     mode = session_data.get("mode", "tour")
 
-    # Tour mode requires a ready Canvas with sections; otherwise fall back to free chat.
+    # Tour mode requires a ready Canvas with a Walkthrough Plan; else fall back to free chat.
     tour_sections = load_canvas_sections(muse_id) if mode == "tour" else []
-    is_tour = bool(tour_sections)
+    tour_stops = load_walkthrough_stops(muse_id) if mode == "tour" else []
+    is_tour = bool(tour_stops)
     system_prompt = (
         build_tour_system_prompt(muse_id, tour_sections) if is_tour else build_system_prompt(muse_id)
     )
@@ -140,10 +147,10 @@ async def voice_proxy(websocket: WebSocket, session_id: str) -> None:
             tour: Optional[TourController] = None
             if is_tour:
                 # Guided Tour: start with a spoken orientation (sources + intent + agenda),
-                # then the controller advances section by section as turns complete.
+                # then the controller advances stop by stop as turns complete.
                 intro_text = build_tour_intro_text(muse_id, tour_sections)
-                tour = TourController(websocket, gemini_session, tour_sections, intro_text=intro_text)
-                await tour.begin(start_section_id=session_data.get("start_section_id"))
+                tour = TourController(websocket, gemini_session, tour_stops, intro_text=intro_text)
+                await tour.begin(start_anchor_id=session_data.get("start_section_id"))
             else:
                 # Free chat: send an empty turn so Gemini greets first.
                 await gemini_session.send_client_content(
@@ -198,9 +205,14 @@ async def _send_loop(websocket: WebSocket, gemini_session, tour: "Optional[TourC
                     mime_type="audio/pcm;rate=16000",
                 )
             )
-        elif msg_type == "jump_section":
-            if tour and msg.get("id"):
-                await tour.jump_to(msg["id"])
+        elif msg_type in ("jump_anchor", "jump_section"):
+            # jump_anchor {anchor_id} is the v0.4 message; jump_section {id} is the alias.
+            anchor_id = msg.get("anchor_id") or msg.get("id")
+            if tour and anchor_id:
+                await tour.jump_to_anchor(anchor_id)
+        elif msg_type == "explain_anchor":
+            if tour and msg.get("anchor_id"):
+                await tour.explain(msg["anchor_id"], msg.get("selected_text"))
         elif msg_type == "end":
             return
 
