@@ -9,15 +9,19 @@ FastAPI WebSocket endpoint can forward it to connected browser clients.
 """
 
 import json
+import logging
 from datetime import datetime
 from sqlmodel import Session
 
+from core.config import settings
 from models.database import engine
 from models.muse import Muse
 from models.resource import Resource
 from models.job import BackgroundJob
 
 from services.research_agent import planner, searcher, evaluator, curator
+
+logger = logging.getLogger(__name__)
 
 
 async def _set_job(job_id: str, progress: int, message: str, status: str = "running") -> None:
@@ -38,6 +42,84 @@ async def _pub(redis_conn, job_id: str, payload: dict) -> None:
     await redis_conn.publish(f"job_progress:{job_id}", json.dumps(payload))
 
 
+async def _full_research(
+    job_id: str, redis_conn, name: str, description: str, level: str, focus: str | None
+) -> tuple[list[dict], dict]:
+    """Normal pipeline: plan → search → evaluate → curate. Returns (selected, report)."""
+    # ── 1. Plan (0 → 15 %) ───────────────────────────────────────────────
+    step_label = f"Planning focused research: {focus[:50]}…" if focus else "Planning research…"
+    await _set_job(job_id, 5, step_label)
+    await _pub(redis_conn, job_id, {"type": "progress", "progress": 5, "step": step_label})
+
+    plan = await planner.generate_research_plan(name, description, level, focus=focus)
+    subtopics = plan.get("subtopics", [])
+
+    await _set_job(job_id, 15, f"Research plan ready — {len(subtopics)} subtopics")
+    await _pub(redis_conn, job_id, {
+        "type": "plan_ready",
+        "progress": 15,
+        "subtopics": [s["name"] for s in subtopics],
+    })
+
+    # ── 2. Search (15 → 50 %) ────────────────────────────────────────────
+    all_results: list[dict] = []
+    for i, subtopic in enumerate(subtopics):
+        pct = 15 + int((i / max(len(subtopics), 1)) * 35)
+        await _set_job(job_id, pct, f"Searching: {subtopic['name']}")
+        await _pub(redis_conn, job_id, {
+            "type": "searching",
+            "progress": pct,
+            "subtopic": subtopic["name"],
+            "index": i,
+            "total": len(subtopics),
+        })
+        results = await searcher.search_queries(subtopic["queries"])
+        all_results.extend(results)
+
+    await _set_job(job_id, 50, f"Found {len(all_results)} candidates, evaluating quality…")
+    await _pub(redis_conn, job_id, {
+        "type": "progress",
+        "progress": 50,
+        "step": f"Found {len(all_results)} candidates — evaluating quality…",
+    })
+
+    # ── 3. Evaluate (50 → 75 %) ──────────────────────────────────────────
+    accepted = await evaluator.evaluate_sources(all_results, name, description, level)
+
+    await _set_job(job_id, 75, f"Kept {len(accepted)} quality sources, curating final set…")
+    await _pub(redis_conn, job_id, {
+        "type": "progress",
+        "progress": 75,
+        "step": f"Kept {len(accepted)} quality sources — curating final set…",
+    })
+
+    # ── 4. Curate (75 → 90 %) ────────────────────────────────────────────
+    result = await curator.curate_and_report(accepted, plan, name, description)
+    return result["selected"], result["report"]
+
+
+async def _fast_research(
+    job_id: str, redis_conn, name: str, description: str, focus: str | None
+) -> tuple[list[dict], dict]:
+    """TESTING_MODE fast-path: one search → one result, no planner/evaluator/curator.
+    NEVER enabled in production (PRD v0.4.1)."""
+    logger.warning("TESTING_MODE on — single-result research fast-path")
+    query = (focus or f"{name} {description}").strip() or name
+
+    await _set_job(job_id, 15, "Testing mode — quick single-source research")
+    await _pub(redis_conn, job_id, {
+        "type": "plan_ready", "progress": 15, "subtopics": ["Quick test source"],
+    })
+    await _pub(redis_conn, job_id, {
+        "type": "searching", "progress": 40,
+        "subtopic": "Quick test source", "index": 0, "total": 1,
+    })
+
+    results = await searcher.search_queries([query], max_results_per_query=1)
+    selected = results[:1]
+    return selected, {"coverage_summary": "Testing mode — single source.", "gaps": []}
+
+
 async def run(
     muse_id: str,
     job_id: str,
@@ -54,58 +136,12 @@ async def run(
         name, description, level = muse.name, muse.description, muse.knowledge_level
 
     try:
-        # ── 1. Plan (0 → 15 %) ───────────────────────────────────────────────
-        step_label = f"Planning focused research: {focus[:50]}…" if focus else "Planning research…"
-        await _set_job(job_id, 5, step_label)
-        await _pub(redis_conn, job_id, {"type": "progress", "progress": 5, "step": step_label})
+        if settings.TESTING_MODE:
+            selected, report = await _fast_research(job_id, redis_conn, name, description, focus)
+        else:
+            selected, report = await _full_research(job_id, redis_conn, name, description, level, focus)
 
-        plan = await planner.generate_research_plan(name, description, level, focus=focus)
-        subtopics = plan.get("subtopics", [])
-
-        await _set_job(job_id, 15, f"Research plan ready — {len(subtopics)} subtopics")
-        await _pub(redis_conn, job_id, {
-            "type": "plan_ready",
-            "progress": 15,
-            "subtopics": [s["name"] for s in subtopics],
-        })
-
-        # ── 2. Search (15 → 50 %) ────────────────────────────────────────────
-        all_results: list[dict] = []
-        for i, subtopic in enumerate(subtopics):
-            pct = 15 + int((i / max(len(subtopics), 1)) * 35)
-            await _set_job(job_id, pct, f"Searching: {subtopic['name']}")
-            await _pub(redis_conn, job_id, {
-                "type": "searching",
-                "progress": pct,
-                "subtopic": subtopic["name"],
-                "index": i,
-                "total": len(subtopics),
-            })
-            results = await searcher.search_queries(subtopic["queries"])
-            all_results.extend(results)
-
-        await _set_job(job_id, 50, f"Found {len(all_results)} candidates, evaluating quality…")
-        await _pub(redis_conn, job_id, {
-            "type": "progress",
-            "progress": 50,
-            "step": f"Found {len(all_results)} candidates — evaluating quality…",
-        })
-
-        # ── 3. Evaluate (50 → 75 %) ──────────────────────────────────────────
-        accepted = await evaluator.evaluate_sources(all_results, name, description, level)
-
-        await _set_job(job_id, 75, f"Kept {len(accepted)} quality sources, curating final set…")
-        await _pub(redis_conn, job_id, {
-            "type": "progress",
-            "progress": 75,
-            "step": f"Kept {len(accepted)} quality sources — curating final set…",
-        })
-
-        # ── 4. Curate (75 → 90 %) ────────────────────────────────────────────
-        result = await curator.curate_and_report(accepted, plan, name, description)
-        selected = result["selected"]
-        report = result["report"]
-
+        # ── Persist (90 → 100 %) — shared by both paths ──────────────────────
         await _set_job(job_id, 90, f"Saving {len(selected)} resources…")
         await _pub(redis_conn, job_id, {
             "type": "progress",
@@ -113,7 +149,6 @@ async def run(
             "step": f"Saving {len(selected)} resources…",
         })
 
-        # ── 5. Persist (90 → 100 %) ──────────────────────────────────────────
         with Session(engine) as session:
             for item in selected:
                 session.add(Resource(

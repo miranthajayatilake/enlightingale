@@ -26,5 +26,10 @@ class Settings(BaseSettings):
     # Queue
     REDIS_URL: str = "redis://redis:6379"
 
+    # Dev/testing only — when true, the Research Agent does a single 1-result search and
+    # skips planning/evaluation/curation, then continues the normal pipeline. Saves time +
+    # API cost while iterating. NEVER enable in production (you get 1-source Canvases).
+    TESTING_MODE: bool = False
+
 
 settings = Settings()
