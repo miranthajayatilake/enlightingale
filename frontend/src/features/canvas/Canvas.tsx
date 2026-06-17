@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Muse, type MuseCanvas } from '@/lib/api'
 import { Button, Spinner } from '@/design-system'
-import { cn } from '@/lib/utils'
 import { useTourStore } from './tourStore'
 import { useMentorPaneStore } from '@/features/voice/mentorPaneStore'
 import { CanvasSectionShell } from './CanvasSectionShell'
@@ -141,27 +140,11 @@ function CanvasEndCTA({ muse }: { muse: Muse }) {
   )
 }
 
-// ── Canvas header (stale banner + options menu) ───────────────────────────────
+// ── Canvas header (stale banner) ─────────────────────────────────────────────
 
 function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
   const queryClient = useQueryClient()
-  const [menuOpen, setMenuOpen] = useState(false)
   const [awaitingBuild, setAwaitingBuild] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const onMouse = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
-    document.addEventListener('mousedown', onMouse)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onMouse)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menuOpen])
 
   const rebuildCanvas = useMutation({
     mutationFn: () => api.post(`/muses/${muse.id}/canvas/build`, {}),
@@ -169,91 +152,35 @@ function CanvasHeader({ muse, stale }: { muse: Muse; stale: boolean }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['canvas', muse.id] }),
     onError: () => setAwaitingBuild(false),
   })
-  const rebuildKnowledge = useMutation({
-    mutationFn: () => api.post(`/muses/${muse.id}/knowledge/build`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['knowledge', muse.id] })
-      queryClient.invalidateQueries({ queryKey: ['canvas', muse.id] })
-    },
-  })
-  const runAgent = useMutation({
-    mutationFn: () => api.post(`/muses/${muse.id}/agent/run`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['muse', muse.id] })
-      queryClient.invalidateQueries({ queryKey: ['muses'] })
-    },
-  })
 
-  const act = (m: { mutate: () => void }) => {
-    m.mutate()
-    setMenuOpen(false)
+  const isRebuilding = rebuildCanvas.isPending || awaitingBuild
+
+  if (isRebuilding) {
+    return (
+      <div className="sticky top-0 z-10 bg-cream/90 backdrop-blur-sm">
+        <div className="flex items-center gap-2 px-6 py-2 bg-accent-light border-b border-accent/20">
+          <Spinner size="sm" />
+          <p className="text-xs text-ink-secondary">Rebuilding your Canvas…</p>
+        </div>
+      </div>
+    )
   }
 
-  const statusBanner = rebuildCanvas.isPending || awaitingBuild
-    ? 'Rebuilding your Canvas…'
-    : rebuildKnowledge.isPending
-    ? 'Rebuilding Knowledge Layer…'
-    : runAgent.isPending
-    ? 'Starting Research Agent…'
-    : null
+  if (!stale) return null
 
   return (
     <div className="sticky top-0 z-10 bg-cream/90 backdrop-blur-sm">
-      {statusBanner ? (
-        <div className="flex items-center gap-2 px-6 py-2 bg-accent-light border-b border-accent/20">
-          <Spinner size="sm" />
-          <p className="text-xs text-ink-secondary">{statusBanner}</p>
-        </div>
-      ) : stale ? (
-        <div className="flex items-center justify-between gap-4 px-6 py-2.5 bg-warning/10 border-b border-warning/20">
-          <p className="text-xs text-ink-secondary">
-            Your knowledge has been updated since this Canvas was built.
-          </p>
-          <button
-            onClick={() => rebuildCanvas.mutate()}
-            className="text-xs font-semibold text-accent hover:text-accent-hover shrink-0 transition-colors"
-          >
-            Rebuild Canvas
-          </button>
-        </div>
-      ) : null}
-      <div className="flex items-center justify-end px-6 py-2.5 border-b border-border">
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Canvas options"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-muted hover:text-ink hover:bg-cream-hover transition-colors"
-          >
-            ⋯
-          </button>
-          {menuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 mt-1 w-56 rounded-lg border border-border bg-surface shadow-lg py-1 z-20"
-            >
-              <MenuItem onClick={() => act(rebuildCanvas)}>Rebuild Canvas</MenuItem>
-              <MenuItem onClick={() => act(rebuildKnowledge)}>Rebuild Knowledge Layer</MenuItem>
-              <MenuItem onClick={() => act(runAgent)}>Run Research Agent again</MenuItem>
-            </div>
-          )}
-        </div>
+      <div className="flex items-center justify-between gap-4 px-6 py-2.5 bg-warning/10 border-b border-warning/20">
+        <p className="text-xs text-ink-secondary">
+          Your knowledge has been updated since this Canvas was built.
+        </p>
+        <button
+          onClick={() => rebuildCanvas.mutate()}
+          className="text-xs font-semibold text-accent hover:text-accent-hover shrink-0 transition-colors"
+        >
+          Rebuild Canvas
+        </button>
       </div>
     </div>
-  )
-}
-
-function MenuItem({ onClick, children }: { onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      role="menuitem"
-      onClick={onClick}
-      className={cn(
-        'w-full text-left px-3 py-2 text-sm text-ink hover:bg-cream-hover transition-colors'
-      )}
-    >
-      {children}
-    </button>
   )
 }

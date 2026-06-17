@@ -3,12 +3,24 @@ from sqlmodel import Session, select
 
 from models.job import BackgroundJob
 from models.knowledge import KnowledgeLayer
+from models.muse import Muse
 
 logger = logging.getLogger(__name__)
 
 
 async def maybe_enqueue_kl_build(muse_id: str, arq_conn, session: Session) -> None:
-    """Enqueue a KL build unless one is already queued/running for this Muse."""
+    """Enqueue a KL build unless one is already queued/running for this Muse.
+
+    Skips if the Research Agent is currently running — the agent will call this
+    again on completion, by which point all its resources will be approved and ready.
+    Triggering early would build the KL from only the resources processed so far,
+    before the agent's gathered sources are available.
+    """
+    muse = session.get(Muse, muse_id)
+    if muse and muse.agent_status == "running":
+        logger.debug("KL build deferred for muse %s — Research Agent is still running", muse_id)
+        return
+
     active = session.exec(
         select(BackgroundJob).where(
             BackgroundJob.muse_id == muse_id,
