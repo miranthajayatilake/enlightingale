@@ -90,6 +90,12 @@ body {
   .animate-build-sweep { animation: none; }
 }
 
+/* Per-Muse accent treatment for the node-tree Canvas (v0.4.2): "rule" tints dividers. */
+.canvas-nodes[data-accent="rule"] hr {
+  border-color: var(--color-accent);
+  opacity: 0.4;
+}
+
 @keyframes build-sweep {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }

@@ -46,6 +46,13 @@ def run_migrations() -> None:
         except Exception:
             pass  # column already exists
 
+        # v0.4.2 — format discriminator on MuseCanvas (legacy typed vs unstructured node tree)
+        try:
+            conn.execute(text("ALTER TABLE muse_canvases ADD COLUMN format TEXT DEFAULT ''"))
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
 
 def get_session():
     with Session(engine) as session:

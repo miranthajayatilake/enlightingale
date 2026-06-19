@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, type Muse, type MuseCanvas } from '@/lib/api'
+import { api, type CanvasNode, type Muse, type MuseCanvas } from '@/lib/api'
 import { Button, Spinner } from '@/design-system'
 import { useTourStore } from './tourStore'
 import { useMentorPaneStore } from '@/features/voice/mentorPaneStore'
 import { BlockRenderer } from './BlockRenderer'
+import { NodeRenderer } from './nodes/NodeRenderer'
 import { ExplainPopup } from './ExplainPopup'
 import { useAnchorTarget } from './useAnchorTarget'
 import { cn } from '@/lib/utils'
@@ -16,13 +17,27 @@ const DENSITY_GAP: Record<string, string> = {
   dense: 'space-y-0.5',
 }
 
+/** Find an addressable node's text by id (for the screen-reader announcement). */
+function findNodeText(nodes: CanvasNode[], id: string): string | undefined {
+  for (const n of nodes) {
+    if (n.id === id) return n.text || n.richtext || n.label || n.caption
+    if (n.children) {
+      const found = findNodeText(n.children, id)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
 interface Props {
   muse: Muse
   canvas: MuseCanvas
 }
 
 export function Canvas({ muse, canvas }: Props) {
-  const sections = [...canvas.sections].sort((a, b) => a.order - b.order)
+  const isNodes = canvas.format === 'nodes/v1'
+  const nodes = canvas.sections as unknown as CanvasNode[]
+  const sections = isNodes ? [] : [...canvas.sections].sort((a, b) => a.order - b.order)
   const activeAnchorIds = useTourStore((s) => s.activeAnchorIds)
   const tourPhase = useTourStore((s) => s.tourPhase)
   const requestExplain = useTourStore((s) => s.requestExplain)
@@ -49,21 +64,22 @@ export function Canvas({ muse, canvas }: Props) {
 
   // During a Guided Tour, outline the anchored element(s) the Mentor is narrating and scroll
   // the most specific one into view — unless the user scrolled manually in the last few
-  // seconds (don't fight them). A bare block id is shown via the block's active shell, so we
-  // only outline sub-element anchors here.
+  // seconds (don't fight them). For the node tree every active anchor is a node, so we
+  // outline them directly; for legacy typed canvases a bare block id is shown via the block
+  // shell, so we only outline sub-element anchors.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     el.querySelectorAll('.canvas-anchor-active').forEach((n) => n.classList.remove('canvas-anchor-active'))
     if (activeAnchorIds.length === 0) return
 
-    const subAnchors = activeAnchorIds.filter((a) => a.includes('.'))
-    subAnchors.forEach((a) => {
+    const toOutline = isNodes ? activeAnchorIds : activeAnchorIds.filter((a) => a.includes('.'))
+    toOutline.forEach((a) => {
       el.querySelectorAll(`[data-anchor="${CSS.escape(a)}"]`).forEach((n) => n.classList.add('canvas-anchor-active'))
     })
 
     if (Date.now() - lastManualScrollRef.current < 4000) return
-    const targetId = subAnchors[0] ?? activeAnchorIds[0]
+    const targetId = toOutline[0] ?? activeAnchorIds[0]
     const target = el.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(targetId)}"]`)
     if (!target) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -71,7 +87,7 @@ export function Canvas({ muse, canvas }: Props) {
     target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
     const timer = window.setTimeout(() => { autoScrollingRef.current = false }, 1000)
     return () => window.clearTimeout(timer)
-  }, [activeAnchorIds])
+  }, [activeAnchorIds, isNodes])
 
   const runFocusedAgent = useMutation({
     mutationFn: (focus: string) => api.post(`/muses/${muse.id}/agent/run`, { focus }),
@@ -88,7 +104,9 @@ export function Canvas({ muse, canvas }: Props) {
   )
 
   const activeBlockIds = new Set(activeAnchorIds.map((a) => a.split('.')[0]))
-  const activeTitle = sections.find((s) => s.id === activeAnchorIds[0]?.split('.')[0])?.title
+  const activeTitle = isNodes
+    ? findNodeText(nodes, activeAnchorIds[0] ?? '')
+    : sections.find((s) => s.id === activeAnchorIds[0]?.split('.')[0])?.title
 
   return (
     <div ref={containerRef} className="h-full overflow-y-auto">
@@ -97,19 +115,23 @@ export function Canvas({ muse, canvas }: Props) {
         {activeTitle ? `Now showing: ${activeTitle}` : ''}
       </div>
       <CanvasHeader muse={muse} stale={canvas.stale} />
-      <div className={cn('max-w-3xl mx-auto px-6 pb-16 pt-2', DENSITY_GAP[canvas.theme?.density ?? 'balanced'])}>
-        {sections.map((section) => (
-          <BlockRenderer
-            key={section.id}
-            section={section}
-            theme={canvas.theme}
-            active={activeBlockIds.has(section.id)}
-            paused={activeBlockIds.has(section.id) && tourPhase === 'detour'}
-            museId={muse.id}
-            onFocusedResearch={onFocusedResearch}
-            focusedResearchPending={runFocusedAgent.isPending}
-          />
-        ))}
+      <div className={cn('max-w-3xl mx-auto px-6 pb-16 pt-2', !isNodes && DENSITY_GAP[canvas.theme?.density ?? 'balanced'])}>
+        {isNodes ? (
+          <NodeRenderer nodes={nodes} theme={canvas.theme} />
+        ) : (
+          sections.map((section) => (
+            <BlockRenderer
+              key={section.id}
+              section={section}
+              theme={canvas.theme}
+              active={activeBlockIds.has(section.id)}
+              paused={activeBlockIds.has(section.id) && tourPhase === 'detour'}
+              museId={muse.id}
+              onFocusedResearch={onFocusedResearch}
+              focusedResearchPending={runFocusedAgent.isPending}
+            />
+          ))
+        )}
 
         {/* End-of-Canvas CTA */}
         <CanvasEndCTA muse={muse} />

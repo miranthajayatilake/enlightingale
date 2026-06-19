@@ -131,9 +131,29 @@ export interface CanvasLayout {
 
 export interface CanvasTheme {
   motif: string
-  hero_style: 'bold' | 'quiet' | 'editorial'
+  hero_style?: 'bold' | 'quiet' | 'editorial'   // legacy (typed canvases); unused by node format
   density: 'airy' | 'balanced' | 'dense'
   accent_treatment: 'wash' | 'rule' | 'none'
+}
+
+/** A node in the unstructured node-tree Canvas (v0.4.2). Generic presentation primitive. */
+export interface CanvasNode {
+  id: string
+  kind: string
+  text?: string
+  richtext?: string
+  level?: number
+  ordered?: boolean
+  items?: string[]
+  value?: string
+  label?: string
+  cite?: string | null
+  tone?: 'info' | 'tip' | 'warning'
+  emoji?: string
+  caption?: string
+  pairs?: { key: string; value: string }[]
+  style?: { size?: string; cols?: number; align?: string }
+  children?: CanvasNode[]
 }
 
 export interface CanvasSection {
@@ -152,6 +172,7 @@ export interface MuseCanvas {
   muse_id: string
   sections: CanvasSection[]
   theme?: CanvasTheme
+  format?: string                       // "" = legacy typed sections | "nodes/v1" = node tree (v0.4.2)
   status: 'idle' | 'building' | 'ready' | 'stale' | 'failed'
   error: string | null
   source_signature: string

@@ -9,8 +9,6 @@ walkthrough is still deterministic because the Mentor highlights anchor ids it c
 Best-effort — falls back to a one-stop-per-block plan if the model output is unusable.
 """
 
-import json
-
 from core.llm_json import complete_json
 from core.logging import logger
 from services.canvas.prompts import build_walkthrough_prompt
@@ -36,26 +34,40 @@ _WALKTHROUGH_SCHEMA = {
 }
 
 
-def _serialize_page(sections: list[dict]) -> str:
+def _node_text(node: dict) -> str:
+    """A short readable summary of a node's content for the reading-pass prompt."""
+    text = node.get("text") or node.get("richtext") or node.get("caption") or ""
+    if not text and node.get("label"):
+        text = f"{node.get('value', '')} {node['label']}".strip()
+    if not text and isinstance(node.get("items"), list):
+        text = "; ".join(str(x) for x in node["items"][:6])
+    if not text and isinstance(node.get("pairs"), list):
+        text = "; ".join(f"{p.get('key')}: {p.get('value')}" for p in node["pairs"][:6] if isinstance(p, dict))
+    return text
+
+
+def _serialize_page(nodes: list[dict], depth: int = 0) -> str:
+    """Render the node tree as an indented "[id] kind: content" outline."""
     lines = []
-    for b in sections:
-        anchors = ", ".join(b.get("anchors", []))
-        content = json.dumps(b.get("data", {}), ensure_ascii=False)
-        if len(content) > 600:
-            content = content[:600] + "…"
-        lines.append(
-            f'[{b["id"]}] {b.get("type")} — "{b.get("title", "")}"\n'
-            f"   anchors: {anchors}\n"
-            f"   content: {content}"
-        )
-    return "\n\n".join(lines)
+    for n in nodes:
+        indent = "  " * depth
+        content = _node_text(n)
+        if len(content) > 160:
+            content = content[:160] + "…"
+        lines.append(f'{indent}[{n["id"]}] {n.get("kind")}: {content}'.rstrip())
+        if isinstance(n.get("children"), list):
+            child_block = _serialize_page(n["children"], depth + 1)
+            if child_block:
+                lines.append(child_block)
+    return "\n".join(lines)
 
 
-def _valid_anchors(sections: list[dict]) -> set[str]:
+def _valid_anchors(nodes: list[dict]) -> set[str]:
     valid: set[str] = set()
-    for b in sections:
-        valid.update(b.get("anchors", []))
-        valid.add(b["id"])
+    for n in nodes:
+        valid.add(n["id"])
+        if isinstance(n.get("children"), list):
+            valid |= _valid_anchors(n["children"])
     return valid
 
 
@@ -79,17 +91,17 @@ def _validate_stops(raw_stops: object, valid: set[str]) -> list[dict]:
     return stops
 
 
-def _fallback_plan(sections: list[dict]) -> dict:
-    """One stop per block when planning fails — degraded but usable."""
+def _fallback_plan(nodes: list[dict]) -> dict:
+    """One stop per top-level node when planning fails — degraded but usable."""
     return {
         "stops": [
             {
                 "id": f"stop_{i}",
-                "anchors": [b["id"]],
-                "narration": f"Let's turn to {b.get('title') or 'this part'}.",
+                "anchors": [n["id"]],
+                "narration": f"Let's look at {(_node_text(n) or 'this part')[:60]}.",
                 "intent": "auto-generated fallback",
             }
-            for i, b in enumerate(sections)
+            for i, n in enumerate(nodes)
         ]
     }
 

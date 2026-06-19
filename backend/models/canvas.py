@@ -47,9 +47,10 @@ class MuseCanvas(SQLModel, table=True):
     __tablename__ = "muse_canvases"
 
     muse_id: str = Field(primary_key=True, foreign_key="muses.id")
-    sections: list = Field(default_factory=list, sa_column=Column(JSON))  # list[CanvasSection dict]
+    sections: list = Field(default_factory=list, sa_column=Column(JSON))  # typed sections (legacy) OR node tree (v0.4.2)
     theme: dict = Field(default_factory=dict, sa_column=Column(JSON))     # per-Muse visual theme (v0.4)
     walkthrough: dict = Field(default_factory=dict, sa_column=Column(JSON))  # Mentor's Walkthrough Plan {stops:[...]} (v0.4 Phase B)
+    format: str = ""                # "" = legacy typed sections | "nodes/v1" = unstructured node tree (v0.4.2)
     status: str = "idle"            # idle | building | ready | stale | failed
     error: Optional[str] = None
     source_signature: str = ""      # fingerprint of inputs at build time; drives staleness
@@ -61,6 +62,7 @@ class MuseCanvasRead(SQLModel):
     sections: list
     theme: dict = {}
     walkthrough: dict = {}
+    format: str = ""
     status: str
     error: Optional[str]
     source_signature: str
