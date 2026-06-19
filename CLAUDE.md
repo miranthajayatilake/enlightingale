@@ -12,7 +12,7 @@ This file is the complete reference for working on this codebase. Read it before
 
 The product is in active Phase 1 development. The full PRD is at `project-management/PRD-Enlightingale.md`. The Phase 1 development plan is at `docs/plans/phase-1-development-plan.md`.
 
-**Release status:** v0.3.2 is the latest tagged release; **v0.4 (Mentor-Authored, Free-Form Canvas) is built but untagged.** Codebase is a git repo with `main` tracking `github.com/miranthajayatilake/enlightingale`. `.env` and `data/` are gitignored — never commit them.
+**Release status:** **v0.4 (Mentor-Authored, Free-Form Canvas) is the latest tagged release** — it folds in the v0.4.1 `TESTING_MODE` dev flag and the Canvas structured-JSON robustness fix. Codebase is a git repo with `main` tracking `github.com/miranthajayatilake/enlightingale`. `.env` and `data/` are gitignored — never commit them.
 
 ---
 
@@ -460,14 +460,15 @@ PRD: `docs/plans/v0.3/PRD-v0.3.2-voice-intro-and-canvas-flow.md`.
 - **`data_sources` section type** (10th section type): a responsive grid of source tiles showing type icon, title, domain, and a one-sentence snippet. Generated with actual resource data injected as context (not RAG), so sources are real. Frontend: `features/canvas/sections/DataSourcesSection.tsx`.
 - **Mentor opening intro**: before the first Canvas section, `TourController` dispatches a spoken orientation turn — user intent, sources gathered (count + titles + domains), and the tour agenda — woven into natural speech by Gemini. `build_tour_intro_text()` in `services/voice/context.py` builds the turn text. `tour_state: 'intro'` emitted during this phase; no Canvas section is highlighted until the intro completes.
 
-### Built (untagged) — v0.4 (Mentor-Authored, Free-Form Canvas)
+### Shipped — v0.4 (Mentor-Authored, Free-Form Canvas)
 PRD: `docs/plans/v0.4/PRD-v0.4-mentor-authored-canvas.md`. The core move: **decouple page generation from teaching** — generate a free-form page first, then the Mentor *reads its own finished page* and authors the teaching plan (PRD §3, KD15 below).
 - **Free-form Canvas generation (M0.4.1)**: `planner.py` composes freely — no hero/takeaways spine, no fixed length — and emits a per-Muse `theme` (motif/hero_style/density/accent_treatment) + per-block `layout` (width/emphasis/columns). `generator.py` Phase A fills visual `data` only (**no narration**) and emits an **anchor map** per block. `MuseCanvas` gains `theme` + `walkthrough` columns (idempotent migrations in `models/database.py`).
 - **Free-form rendering (M0.4.2)**: `BlockRenderer` applies theme + layout; every section component stamps `data-anchor` ids matching the backend scheme; `GenericBlock` safe fallback for unknown kinds; two new editorial kinds `pull_quote` + `callout`. All treatments resolve to design tokens.
 - **Mentor Walkthrough Planner (M0.4.3 — Phase B)**: `services/canvas/walkthrough.py` `plan_walkthrough()` reads the finished page and authors `{stops:[{id, anchors, narration, intent}]}`, validating anchors against the page and falling back to one-stop-per-block. Runs as Phase B of the `canvas` job; persisted on `MuseCanvas.walkthrough`.
 - **Tour over the Plan (M0.4.4)**: `TourController` iterates **stops** (not sections), emits `canvas_focus {anchor_ids,…}` (extends/replaces `canvas_section`); frontend highlights the block + outlines sub-element anchors and scrolls. First-person tour system prompt. Detour/resume/jump preserved (`jump_anchor`).
 - **Mentor-owned entry + dynamic Explain This (M0.4.5)**: chat-first greeting → voice tour on tap; the static per-section "Explain this" button is replaced by a floating **`ExplainPopup`** driven by `useAnchorTarget` (click/selection → nearest `data-anchor`). Live session → `explain_anchor` (detour-style explain that re-anchors); no session → starts a tour at that anchor.
-- **Persona & polish (M0.4.6)**: first-person authorship copy across greeting / intro / narration / build stages; reduced-motion for the anchor highlight + sweep. **Audit not yet run** (deferred); end-to-end runtime verification on the live Gemini stack still pending.
+- **Persona & polish (M0.4.6)**: first-person authorship copy across greeting / intro / narration / build stages; reduced-motion for the anchor highlight + sweep. **Audit not yet run** (deferred).
+- **Robust structured JSON + dev `TESTING_MODE` (v0.4.1, in this release)**: all Canvas Claude calls (planner / section / walkthrough) go through Claude tool use with an enforced `input_schema` via `core/llm_json.complete_json` — eliminating the truncation/escaping crash class and making the returned shape deterministic. `TESTING_MODE` (env flag, default false) runs a one-search/one-result Research Agent fast-path for cheap test cycles. PRD: `docs/plans/v0.4/PRD-v0.4.1-testing-fast-research.md`.
 
 ### Next — Phase 2
 - Auth (single-user login)
